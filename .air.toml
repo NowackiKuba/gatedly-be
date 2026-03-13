@@ -1,0 +1,24 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # command Air runs to rebuild
+  cmd = "go build -o ./tmp/api ./cmd/api"
+  # binary Air executes after a successful build
+  bin = "./tmp/api"
+  # files/dirs that trigger a rebuild when changed
+  include_ext = ["go", "tmpl", "html"]
+  exclude_dir  = ["tmp", "vendor", "web", "deployments", ".git"]
+  # kill the old process before starting the new one
+  kill_delay = "200ms"
+  # print build errors to the terminal
+  log = "build-errors.log"
+
+[log]
+  time = true
+
+[color]
+  main    = "magenta"
+  watcher = "cyan"
+  build   = "yellow"
+  runner  = "green"

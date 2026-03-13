@@ -1,0 +1,59 @@
+version: '3.9'
+
+services:
+  # ── postgres ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_DB: flagly
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── api — development (hot reload via Air) ────────────────────────────────
+  api:
+    build:
+      context: . # project root
+      dockerfile: Dockerfile
+      target: dev # uses the "dev" stage with Air installed
+    env_file: ./cmd/api/internal/config/.env
+    environment:
+      DB_HOST: postgres  # use service name when running in Docker
+    ports:
+      - '8080:8080'
+    volumes:
+      - .:/app # mount entire source so Air can watch files
+      - go_mod_cache:/go/pkg/mod # cache modules between restarts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Air reads .air.toml from the working directory (/app)
+
+  # ── api — production (compiled binary, no source mount) ───────────────────
+  api_prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    env_file: ./cmd/api/internal/config/.env
+    environment:
+      DB_HOST: postgres
+    ports:
+      - '8080:8080'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - prod # only starts with: docker compose --profile prod up
+
+volumes:
+  postgres_data:
+  go_mod_cache:
