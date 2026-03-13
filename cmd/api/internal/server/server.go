@@ -21,8 +21,10 @@ func Init(db *gorm.DB, cfg *config.Config) {
 		env = "development"
 	}
 	slog := logger.New(env)
+	slog.Info("server init (api routes)", "version", "1")
 
 	router := gin.New()
+	router.RedirectTrailingSlash = true
 	router.Use(middleware.Logger(slog), middleware.Recoverer(slog), middleware.CORS())
 
 	// User repo/service/handler (shared with auth)
@@ -34,12 +36,37 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	authSvc := auth.NewService(userRepo, cfg.JWT.Secret, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
 	authHandler := auth.NewHandler(authSvc)
 
+	// Health + auth + user routes (explicit paths to avoid group path issues)
 	v1 := router.Group("/api/v1")
-	auth.RegisterRoutes(v1.Group("/auth"), authHandler)
+	v1.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+	v1.POST("/auth/register", authHandler.Register)
+	v1.POST("/auth/login", authHandler.Login)
+	v1.POST("/auth/refresh", authHandler.Refresh)
 
 	usersGroup := v1.Group("/users")
 	usersGroup.Use(middleware.Auth(cfg.JWT.Secret))
 	user.RegisterRoutes(usersGroup, userHandler)
+	//
+
+	// Log all registered API routes (Gin's Routes() can be incomplete with groups)
+	routes := []struct{ method, path string }{
+		{"GET", "/api/v1/health"},
+		{"POST", "/api/v1/auth/register"},
+		{"POST", "/api/v1/auth/login"},
+		{"POST", "/api/v1/auth/refresh"},
+		{"GET", "/api/v1/users/me"},
+		{"PATCH", "/api/v1/users/me"},
+	}
+	for _, r := range routes {
+		slog.Info("route", "method", r.method, "path", r.path)
+	}
+
+	router.NoRoute(func(c *gin.Context) {
+		slog.Warn("404", "method", c.Request.Method, "path", c.Request.URL.Path)
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found", "path": c.Request.URL.Path})
+	})
 
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Addr,

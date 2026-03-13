@@ -28,7 +28,7 @@ type DBConfig struct {
 	DSN      string `env:"DSN"`
 	Host     string `env:"HOST" envDefault:"localhost"`
 	User     string `env:"USER" envDefault:"postgres"`
-	Password string `env:"PASSWORD" envDefault:""`
+	Password string `env:"PASSWORD" envDefault:"password"`
 	DBName   string `env:"NAME" envDefault:"postgres"`
 	Port     string `env:"PORT" envDefault:"5432"`
 }
@@ -43,7 +43,7 @@ func (d *DBConfig) ConnectionString() string {
 
 // JWTConfig holds JWT signing and TTL settings.
 type JWTConfig struct {
-	Secret          string        `env:"SECRET,required"`
+	Secret          string        `env:"SECRET" envDefault:"dev-secret-change-in-production"`
 	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`
 	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"168h"`
 }
@@ -59,4 +59,3 @@ func MustLoad() *Config {
 	}
 	return &cfg
 }
-

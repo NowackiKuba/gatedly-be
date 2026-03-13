@@ -24,9 +24,13 @@ services:
       context: . # project root
       dockerfile: Dockerfile
       target: dev # uses the "dev" stage with Air installed
-    env_file: ./cmd/api/internal/config/.env
+    env_file: ./.env
     environment:
-      DB_HOST: postgres  # use service name when running in Docker
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: flagly
+      DB_USER: postgres
+      DB_PASSWORD: password
     ports:
       - '8080:8080'
     volumes:
@@ -43,9 +47,13 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
-    env_file: ./cmd/api/internal/config/.env
+    env_file: ./.env
     environment:
       DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: flagly
+      DB_USER: postgres
+      DB_PASSWORD: password
     ports:
       - '8080:8080'
     depends_on:

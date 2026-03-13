@@ -9,7 +9,7 @@ import (
 
 func main() {
 	// Try loading .env from common paths (run from repo root or cmd/api)
-	for _, rel := range []string{"cmd/api/internal/config/.env", "internal/config/.env", ".env"} {
+	for _, rel := range []string{".env", ".env", ".env"} {
 		if err := godotenv.Load(rel); err == nil {
 			break
 		}

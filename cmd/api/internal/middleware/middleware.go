@@ -5,9 +5,10 @@ import (
 	"net/http"
 	"time"
 
+	"log/slog"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"log/slog"
 )
 
 type contextKey string

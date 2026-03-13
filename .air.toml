@@ -2,8 +2,8 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  # command Air runs to rebuild
-  cmd = "go build -o ./tmp/api ./cmd/api"
+  # command Air runs to rebuild (go mod tidy fills missing go.sum so build succeeds)
+  cmd = "go mod tidy && go build -o ./tmp/api ./cmd/api"
   # binary Air executes after a successful build
   bin = "./tmp/api"
   # files/dirs that trigger a rebuild when changed

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -83,11 +84,88 @@ func (s *StringArray) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ConditionOperator is the logical operator for combining conditions (AND / OR).
+type ConditionOperator string
+
+const (
+	OperatorAND ConditionOperator = "AND"
+	OperatorOR  ConditionOperator = "OR"
+)
+
+// CompareOperator is the comparison operator for a single condition.
+type CompareOperator string
+
+const (
+	CompareEq       CompareOperator = "eq"
+	CompareNeq      CompareOperator = "neq"
+	CompareGt       CompareOperator = "gt"
+	CompareLt       CompareOperator = "lt"
+	CompareGte      CompareOperator = "gte"
+	CompareLte      CompareOperator = "lte"
+	CompareIn       CompareOperator = "in"
+	CompareNotIn    CompareOperator = "not_in"
+	CompareContains CompareOperator = "contains"
+)
+
+// Condition represents a single attribute comparison.
+type Condition struct {
+	Attribute string         `json:"attribute"`
+	Operator  CompareOperator `json:"operator"`
+	Value     any            `json:"value"`
+}
+
+// ConditionGroup is a group of conditions combined by AND or OR (stored as JSONB).
+type ConditionGroup struct {
+	Operator   ConditionOperator `json:"operator"`
+	Conditions []Condition       `json:"conditions"`
+}
+
+// Empty returns true when there are no conditions.
+func (g ConditionGroup) Empty() bool {
+	return len(g.Conditions) == 0
+}
+
+// Scan implements sql.Scanner for postgres JSONB.
+func (g *ConditionGroup) Scan(value interface{}) error {
+	if value == nil {
+		*g = ConditionGroup{Conditions: []Condition{}}
+		return nil
+	}
+	var source []byte
+	switch v := value.(type) {
+	case []byte:
+		source = v
+	case string:
+		source = []byte(v)
+	default:
+		return fmt.Errorf("unsupported type for ConditionGroup: %T", value)
+	}
+	if len(source) == 0 {
+		*g = ConditionGroup{Conditions: []Condition{}}
+		return nil
+	}
+	if err := json.Unmarshal(source, g); err != nil {
+		return fmt.Errorf("ConditionGroup scan: %w", err)
+	}
+	if g.Conditions == nil {
+		g.Conditions = []Condition{}
+	}
+	return nil
+}
+
+// Value implements driver.Valuer for postgres JSONB.
+func (g ConditionGroup) Value() (driver.Value, error) {
+	if len(g.Conditions) == 0 && g.Operator == "" {
+		return "{}", nil
+	}
+	return json.Marshal(g)
+}
+
 // Base is embedded in all models: UUID PK, timestamps, soft delete.
 type Base struct {
 	ID        uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey"`
-	CreatedAt int64          `json:"createdAt" gorm:"autoCreateTime"`
-	UpdatedAt int64          `json:"updatedAt" gorm:"autoUpdateTime"`
+	CreatedAt time.Time      `json:"createdAt" gorm:"autoCreateTime"`
+	UpdatedAt time.Time      `json:"updatedAt" gorm:"autoUpdateTime"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
@@ -154,13 +232,14 @@ func (Flag) TableName() string { return "flags" }
 // FlagRule defines per-environment rule for a flag.
 type FlagRule struct {
 	Base
-	FlagID        uuid.UUID  `json:"flagId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
-	EnvironmentID uuid.UUID  `json:"environmentId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
-	Enabled       bool       `json:"enabled" gorm:"not null;default:false"`
-	RolloutPct    int        `json:"rolloutPct" gorm:"not null;default:0;check:rollout_pct >= 0 AND rollout_pct <= 100"`
-	AllowList     StringArray `json:"allowList" gorm:"type:text[]"`
-	DenyList      StringArray `json:"denyList" gorm:"type:text[]"`
-	UpdatedBy     uuid.UUID  `json:"updatedBy" gorm:"type:uuid;not null"`
+	FlagID        uuid.UUID     `json:"flagId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
+	EnvironmentID uuid.UUID     `json:"environmentId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
+	Enabled       bool          `json:"enabled" gorm:"not null;default:false"`
+	RolloutPct    int           `json:"rolloutPct" gorm:"not null;default:0;check:rollout_pct >= 0 AND rollout_pct <= 100"`
+	AllowList     StringArray   `json:"allowList" gorm:"type:text[]"`
+	DenyList      StringArray   `json:"denyList" gorm:"type:text[]"`
+	Conditions    ConditionGroup `json:"conditions" gorm:"type:jsonb;default:'{}'"`
+	UpdatedBy     uuid.UUID     `json:"updatedBy" gorm:"type:uuid;not null"`
 }
 
 // TableName returns the table name for FlagRule.
