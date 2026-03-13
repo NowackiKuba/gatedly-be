@@ -9,7 +9,9 @@ import (
 	"gorm.io/gorm"
 	"toggly.com/m/cmd/api/internal/auth"
 	"toggly.com/m/cmd/api/internal/config"
+	"toggly.com/m/cmd/api/internal/environment"
 	"toggly.com/m/cmd/api/internal/middleware"
+	"toggly.com/m/cmd/api/internal/project"
 	"toggly.com/m/cmd/api/internal/user"
 	"toggly.com/m/pkg/logger"
 )
@@ -32,9 +34,17 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	userSvc := user.NewService(userRepo)
 	userHandler := user.NewHandler(userSvc)
 
+	envRepo := environment.NewRepository(db)
+	envSvc := environment.NewService(envRepo)
+	envHandler := environment.NewHandler(envSvc)
+
 	// Auth service/handler (uses user repo)
 	authSvc := auth.NewService(userRepo, cfg.JWT.Secret, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
 	authHandler := auth.NewHandler(authSvc)
+
+	projRepo := project.NewRepository(db)
+	projSvc := project.NewService(projRepo)
+	projHandler := project.NewHandler(projSvc)
 
 	// Health + auth + user routes (explicit paths to avoid group path issues)
 	v1 := router.Group("/api/v1")
@@ -48,6 +58,14 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	usersGroup := v1.Group("/users")
 	usersGroup.Use(middleware.Auth(cfg.JWT.Secret))
 	user.RegisterRoutes(usersGroup, userHandler)
+
+	envGroup := v1.Group("/environments")
+	envGroup.Use(middleware.Auth(cfg.JWT.Secret))
+	environment.RegisterRoutes(envGroup, envHandler)
+
+	projGroup := v1.Group("/projects")
+	projGroup.Use(middleware.Auth(cfg.JWT.Secret))
+	project.RegisterRoutes(projGroup, projHandler)
 	//
 
 	// Log all registered API routes (Gin's Routes() can be incomplete with groups)
