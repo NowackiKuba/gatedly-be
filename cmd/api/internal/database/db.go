@@ -13,7 +13,7 @@ func Connect(dsn string) *gorm.DB {
 		panic(err)
 	}
 
-	db.AutoMigrate(&domain.User{}, &domain.Project{}, &domain.Environment{}, &domain.Flag{}, &domain.FlagRule{})
+	db.AutoMigrate(&domain.User{}, &domain.Project{}, &domain.Environment{}, &domain.Flag{}, &domain.FlagRule{}, &domain.APIKey{})
 
 	return db
 }

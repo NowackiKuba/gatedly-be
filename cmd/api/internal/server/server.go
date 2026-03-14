@@ -7,9 +7,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"toggly.com/m/cmd/api/internal/apikey"
 	"toggly.com/m/cmd/api/internal/auth"
 	"toggly.com/m/cmd/api/internal/config"
 	"toggly.com/m/cmd/api/internal/environment"
+	"toggly.com/m/cmd/api/internal/evaluation"
 	"toggly.com/m/cmd/api/internal/flag"
 	"toggly.com/m/cmd/api/internal/flagrule"
 	"toggly.com/m/cmd/api/internal/middleware"
@@ -28,8 +30,10 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	slog.Info("server init (api routes)", "version", "1")
 
 	router := gin.New()
-	router.RedirectTrailingSlash = true
-	router.Use(middleware.Logger(slog), middleware.Recoverer(slog), middleware.CORS())
+	// Disable redirects so CORS headers are always applied (redirects can bypass middleware).
+	router.RedirectTrailingSlash = false
+	// CORS must run first so headers are set on every response (including 401/404).
+	router.Use(middleware.CORS(), middleware.Logger(slog), middleware.Recoverer(slog))
 
 	// User repo/service/handler (shared with auth)
 	userRepo := user.NewRepository(db)
@@ -53,8 +57,15 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	flagHandler := flag.NewHandler(flagSvc)
 
 	flagRuleRepo := flagrule.NewRepository(db)
-	flagRuleSvc := flagrule.NewService(flagRuleRepo)
+	evalSvc := evaluation.New(flagRuleRepo)
+	flagRuleSvc := flagrule.NewService(flagRuleRepo, evalSvc.InvalidateCache)
 	flagRuleHandler := flagrule.NewHandler(flagRuleSvc)
+
+	apiKeyRepo := apikey.NewRepository(db)
+	apiKeySvc := apikey.NewService(apiKeyRepo)
+	apiKeyHandler := apikey.NewHandler(apiKeySvc)
+
+	evalHandler := evaluation.NewHandler(evalSvc)
 
 	// Health + auth + user routes (explicit paths to avoid group path issues)
 	v1 := router.Group("/api/v1")
@@ -84,6 +95,14 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	flagRuleGroup := v1.Group("/flag-rules")
 	flagRuleGroup.Use(middleware.Auth(cfg.JWT.Secret))
 	flagrule.RegisterRoutes(flagRuleGroup, flagRuleHandler)
+
+	apiKeysGroup := v1.Group("/api-keys")
+	apiKeysGroup.Use(middleware.Auth(cfg.JWT.Secret))
+	apikey.RegisterRoutes(apiKeysGroup, apiKeyHandler)
+
+	evalGroup := v1.Group("/evaluation")
+	evalGroup.Use(middleware.APIKeyAuth(apiKeySvc))
+	evaluation.RegisterRoutes(evalGroup, evalHandler)
 	//
 
 	// Log all registered API routes (Gin's Routes() can be incomplete with groups)

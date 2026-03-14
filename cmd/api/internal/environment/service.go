@@ -14,7 +14,7 @@ type Service interface {
 	Create(ctx context.Context, env *domain.Environment) error
 	Update(ctx context.Context, env *domain.Environment) error
 	GetById(ctx context.Context, id uuid.UUID) (*domain.Environment, error)
-	GetByProjectId(ctx context.Context, id uuid.UUID) (*pagination.Page[domain.Environment], error)
+	GetByProjectId(ctx context.Context, filters Filters, projectID uuid.UUID) (*pagination.Page[domain.Environment], error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -27,11 +27,8 @@ func NewService(repo Repository) Service {
 }
 
 func (s *service) Create(ctx context.Context, env *domain.Environment) error {
-	exixts := s.repo.ExistsByProjectIdAndSlug(ctx, env.ProjectID, env.Slug)
-
-	if exixts {
-		// TODO
-
+	if s.repo.ExistsByProjectIdAndSlug(ctx, env.ProjectID, env.Slug) {
+		return response.Conflict("environment with this slug already exists in project")
 	}
 	if err := s.repo.Create(ctx, env); err != nil {
 		return fmt.Errorf("create environment: %w", err)
@@ -64,8 +61,8 @@ func (s *service) GetById(ctx context.Context, id uuid.UUID) (*domain.Environmen
 	return env, nil
 }
 
-func (s *service) GetByProjectId(ctx context.Context, id uuid.UUID) (*pagination.Page[domain.Environment], error) {
-	page, err := s.repo.GetByProjectId(ctx, id)
+func (s *service) GetByProjectId(ctx context.Context, filters Filters, projectID uuid.UUID) (*pagination.Page[domain.Environment], error) {
+	page, err := s.repo.GetByProjectId(ctx, filters, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("get environments by project: %w", err)
 	}

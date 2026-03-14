@@ -232,15 +232,32 @@ func (Flag) TableName() string { return "flags" }
 // FlagRule defines per-environment rule for a flag.
 type FlagRule struct {
 	Base
-	FlagID        uuid.UUID     `json:"flagId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
-	EnvironmentID uuid.UUID     `json:"environmentId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
-	Enabled       bool          `json:"enabled" gorm:"not null;default:false"`
-	RolloutPct    int           `json:"rolloutPct" gorm:"not null;default:0;check:rollout_pct >= 0 AND rollout_pct <= 100"`
-	AllowList     StringArray   `json:"allowList" gorm:"type:text[]"`
-	DenyList      StringArray   `json:"denyList" gorm:"type:text[]"`
-	Conditions    ConditionGroup `json:"conditions" gorm:"type:jsonb;default:'{}'"`
-	UpdatedBy     uuid.UUID     `json:"updatedBy" gorm:"type:uuid;not null"`
+	FlagID        uuid.UUID       `json:"flagId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
+	EnvironmentID uuid.UUID       `json:"environmentId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
+	Enabled       bool            `json:"enabled" gorm:"not null;default:false"`
+	RolloutPct    int             `json:"rolloutPct" gorm:"not null;default:0;check:rollout_pct >= 0 AND rollout_pct <= 100"`
+	AllowList     StringArray     `json:"allowList" gorm:"type:text[]"`
+	DenyList      StringArray     `json:"denyList" gorm:"type:text[]"`
+	Conditions    ConditionGroup   `json:"conditions" gorm:"type:jsonb;default:'{}'"`
+	UpdatedBy     uuid.UUID       `json:"updatedBy" gorm:"type:uuid;not null"`
+
+	// Flag is populated when preloading (e.g. in evaluation cache). Not stored as a column.
+	Flag *Flag `json:"flag,omitempty" gorm:"foreignKey:FlagID"`
 }
 
 // TableName returns the table name for FlagRule.
 func (FlagRule) TableName() string { return "flag_rules" }
+
+// APIKey is a secret key scoped to an environment (e.g. for SDK / evaluation).
+type APIKey struct {
+	Base
+	EnvironmentID uuid.UUID   `json:"environmentId" gorm:"type:uuid;not null;index"`
+	Environment   Environment `json:"environment,omitempty" gorm:"foreignKey:EnvironmentID"`
+	Name          string      `json:"name" gorm:"size:255;not null"`
+	Prefix        string      `json:"prefix" gorm:"size:16;not null;uniqueIndex:idx_api_key_prefix"`
+	KeyHash       string      `json:"-" gorm:"size:255;not null"`
+	LastUsedAt    *time.Time  `json:"lastUsedAt" gorm:"type:timestamptz"`
+}
+
+// TableName returns the table name for APIKey.
+func (APIKey) TableName() string { return "api_keys" }

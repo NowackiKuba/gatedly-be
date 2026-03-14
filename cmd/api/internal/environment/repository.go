@@ -10,12 +10,19 @@ import (
 	"toggly.com/m/pkg/pagination"
 )
 
+type Filters struct {
+	Limit        int
+	Offset       int
+	OrderBy      string
+	OrderByField string
+}
+
 type Repository interface {
 	Create(ctx context.Context, env *domain.Environment) error
 	Update(ctx context.Context, env *domain.Environment) error
 	GetById(ctx context.Context, id uuid.UUID) (*domain.Environment, error)
-	GetByProjectId(ctx context.Context, id uuid.UUID) (*pagination.Page[domain.Environment], error)
-	ExistsByProjectIdAndSlug(ctx context.Context, id uuid.UUID, slug string) bool
+	GetByProjectId(ctx context.Context, filters Filters, projectID uuid.UUID) (*pagination.Page[domain.Environment], error)
+	ExistsByProjectIdAndSlug(ctx context.Context, projectID uuid.UUID, slug string) bool
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -53,17 +60,34 @@ func (r *repository) GetById(ctx context.Context, id uuid.UUID) (*domain.Environ
 	return &env, nil
 }
 
-func (r *repository) GetByProjectId(ctx context.Context, id uuid.UUID) (*pagination.Page[domain.Environment], error) {
+func (r *repository) GetByProjectId(ctx context.Context, filters Filters, projectID uuid.UUID) (*pagination.Page[domain.Environment], error) {
 	var list []domain.Environment
-	query := r.db.WithContext(ctx).Where("project_id = ?", id).Order("created_at ASC")
-	if err := query.Find(&list).Error; err != nil {
-		return nil, fmt.Errorf("environment get by project id: %w", err)
+	orderField := filters.OrderByField
+	if orderField == "" {
+		orderField = "created_at"
 	}
+	order := filters.OrderBy
+	if order == "" {
+		order = "asc"
+	}
+	orderParam := orderField + " " + order
+
 	var total int64
-	if err := r.db.WithContext(ctx).Model(&domain.Environment{}).Where("project_id = ?", id).Count(&total).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Model(&domain.Environment{}).
+		Where("project_id = ?", projectID).
+		Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("environment count by project id: %w", err)
 	}
-	page := pagination.Paginate(list, len(list), 0, int(total))
+	if err := r.db.WithContext(ctx).
+		Where("project_id = ?", projectID).
+		Order(orderParam).
+		Limit(filters.Limit).
+		Offset(filters.Offset).
+		Find(&list).Error; err != nil {
+		return nil, fmt.Errorf("environment get by project id: %w", err)
+	}
+	page := pagination.Paginate(list, filters.Limit, filters.Offset, int(total))
 	return &page, nil
 }
 
@@ -78,12 +102,13 @@ func (r *repository) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (r *repository) ExistsByProjectIdAndSlug(ctx context.Context, id uuid.UUID, slug string) bool {
-	var env *domain.Environment
-
-	if err := r.db.Where("project_id = ? and slug = ?", id, slug).First(&env); err != nil {
+func (r *repository) ExistsByProjectIdAndSlug(ctx context.Context, projectID uuid.UUID, slug string) bool {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&domain.Environment{}).
+		Where("project_id = ? AND slug = ?", projectID, slug).
+		Limit(1).
+		Count(&count).Error; err != nil {
 		return false
 	}
-
-	return env == nil
+	return count > 0
 }

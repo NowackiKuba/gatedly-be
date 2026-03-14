@@ -2,6 +2,7 @@ package flagrule
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -16,6 +17,17 @@ type Handler struct {
 
 func NewHandler(svc Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+func parseIntDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return v
 }
 
 type CreateRequest struct {
@@ -105,16 +117,25 @@ func (h *Handler) ListByFlag(c *gin.Context) {
 		c.Abort()
 		return
 	}
-	list, err := h.svc.GetByFlagId(c.Request.Context(), flagID)
+	limit := parseIntDefault(c.Query("limit"), 20)
+	offset := parseIntDefault(c.Query("offset"), 0)
+	orderBy := c.DefaultQuery("orderBy", "asc")
+	orderByField := c.DefaultQuery("orderByField", "id")
+
+	filters := Filters{
+		Limit:        limit,
+		Offset:       offset,
+		OrderBy:      orderBy,
+		OrderByField: orderByField,
+	}
+
+	page, err := h.svc.GetByFlagId(c.Request.Context(), filters, flagID)
 	if err != nil {
 		response.Error(c.Writer, err)
 		c.Abort()
 		return
 	}
-	if list == nil {
-		list = []domain.FlagRule{}
-	}
-	response.JSON(c.Writer, http.StatusOK, list)
+	response.JSON(c.Writer, http.StatusOK, page)
 }
 
 type UpdateRequest struct {
