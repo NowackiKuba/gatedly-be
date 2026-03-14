@@ -1,6 +1,6 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "deployments/docker/Dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "./api"
