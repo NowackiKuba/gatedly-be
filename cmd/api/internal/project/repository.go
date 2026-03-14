@@ -20,6 +20,7 @@ type Repository interface {
 	Create(ctx context.Context, p *domain.Project) error
 	Update(ctx context.Context, p *domain.Project) error
 	GetById(ctx context.Context, id uuid.UUID) (*domain.Project, error)
+	GetBySlug(ctx context.Context, slug string) (*domain.Project, error)
 	GetByUserId(ctx context.Context, filters Filters, userId uuid.UUID) (pagination.Page[domain.Project], error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
@@ -51,6 +52,19 @@ func (r *repository) Update(ctx context.Context, p *domain.Project) error {
 func (r *repository) GetById(ctx context.Context, id uuid.UUID) (*domain.Project, error) {
 	var p domain.Project
 	err := r.db.WithContext(ctx).Where("id = ?", id).First(&p).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &p, nil
+}
+
+func (r *repository) GetBySlug(ctx context.Context, slug string) (*domain.Project, error) {
+	var p domain.Project
+	err := r.db.WithContext(ctx).Where("slug = ?", slug).First(&p).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil

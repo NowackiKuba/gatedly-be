@@ -10,6 +10,8 @@ import (
 	"toggly.com/m/cmd/api/internal/auth"
 	"toggly.com/m/cmd/api/internal/config"
 	"toggly.com/m/cmd/api/internal/environment"
+	"toggly.com/m/cmd/api/internal/flag"
+	"toggly.com/m/cmd/api/internal/flagrule"
 	"toggly.com/m/cmd/api/internal/middleware"
 	"toggly.com/m/cmd/api/internal/project"
 	"toggly.com/m/cmd/api/internal/user"
@@ -46,6 +48,14 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	projSvc := project.NewService(projRepo)
 	projHandler := project.NewHandler(projSvc)
 
+	flagRepo := flag.NewRepository(db)
+	flagSvc := flag.NewService(flagRepo)
+	flagHandler := flag.NewHandler(flagSvc)
+
+	flagRuleRepo := flagrule.NewRepository(db)
+	flagRuleSvc := flagrule.NewService(flagRuleRepo)
+	flagRuleHandler := flagrule.NewHandler(flagRuleSvc)
+
 	// Health + auth + user routes (explicit paths to avoid group path issues)
 	v1 := router.Group("/api/v1")
 	v1.GET("/health", func(c *gin.Context) {
@@ -66,6 +76,14 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	projGroup := v1.Group("/projects")
 	projGroup.Use(middleware.Auth(cfg.JWT.Secret))
 	project.RegisterRoutes(projGroup, projHandler)
+
+	flagGroup := v1.Group("/flags")
+	flagGroup.Use(middleware.Auth(cfg.JWT.Secret))
+	flag.RegisterRoutes(flagGroup, flagHandler)
+
+	flagRuleGroup := v1.Group("/flag-rules")
+	flagRuleGroup.Use(middleware.Auth(cfg.JWT.Secret))
+	flagrule.RegisterRoutes(flagRuleGroup, flagRuleHandler)
 	//
 
 	// Log all registered API routes (Gin's Routes() can be incomplete with groups)
