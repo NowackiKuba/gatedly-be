@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"toggly.com/m/cmd/api/internal/domain"
+	"toggly.com/m/cmd/api/internal/analytics"
 	"toggly.com/m/cmd/api/internal/flagrule"
 )
 
@@ -27,17 +28,20 @@ type Service struct {
 	mu       sync.RWMutex  // protects cache
 	stopCh   chan struct{} // closed on shutdown → goroutine exits
 	reloadCh chan struct{} // send a value → goroutine reloads immediately
+
+	analyticsRollups *analytics.Service
 }
 
 // New creates a Service, loads the cache for the first time,
 // and starts the background refresh goroutine.
-func New(repo flagrule.Repository) *Service {
+func New(repo flagrule.Repository, analyticsRollups *analytics.Service) *Service {
 	s := &Service{
 		repo:   repo,
 		cache:  make(map[cacheKey]domain.FlagRule),
 		stopCh: make(chan struct{}),
 		// Buffer of 1 so the sender never blocks if a reload is already pending.
 		reloadCh: make(chan struct{}, 1),
+		analyticsRollups: analyticsRollups,
 	}
 
 	// Load rules once before we return so the first request is never a cache miss.
@@ -143,6 +147,22 @@ func (s *Service) Evaluate(ctx context.Context, envID uuid.UUID, flagKey, userID
 
 	result := Evaluate(rule, userID, attributes)
 	result.FlagKey = flagKey
+
+	// Record analytics rollups. Never block evaluation if analytics fails.
+	if s.analyticsRollups != nil && rule.Flag != nil {
+		// Use the same UTC date for all increments within this request.
+		now := time.Now().UTC()
+		date := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+		projectID := rule.Flag.ProjectID
+		if err := s.analyticsRollups.IncrementEnvEvaluationsDaily(ctx, projectID, envID, date, 1); err != nil {
+			slog.Error("analytics env rollup increment failed", "env_id", envID, "project_id", projectID, "err", err)
+		}
+		if err := s.analyticsRollups.IncrementFlagEvaluationsDaily(ctx, projectID, rule.FlagID, date, 1); err != nil {
+			slog.Error("analytics flag rollup increment failed", "flag_id", rule.FlagID, "project_id", projectID, "err", err)
+		}
+	}
+
 	return result, nil
 }
 
@@ -153,6 +173,12 @@ func (s *Service) EvaluateBatch(ctx context.Context, envID uuid.UUID, flagKeys [
 	results := make([]EvaluationResult, len(flagKeys))
 
 	var wg sync.WaitGroup
+
+	var date time.Time
+	if s.analyticsRollups != nil {
+		now := time.Now().UTC()
+		date = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	}
 
 	for i, key := range flagKeys {
 		wg.Add(1)
@@ -172,6 +198,17 @@ func (s *Service) EvaluateBatch(ctx context.Context, envID uuid.UUID, flagKeys [
 			result := Evaluate(rule, userID, attributes)
 			result.FlagKey = key
 			results[i] = result
+
+			// Record analytics rollups. Never block evaluation if analytics fails.
+			if s.analyticsRollups != nil && rule.Flag != nil {
+				projectID := rule.Flag.ProjectID
+				if err := s.analyticsRollups.IncrementEnvEvaluationsDaily(ctx, projectID, envID, date, 1); err != nil {
+					slog.Error("analytics env rollup increment failed", "env_id", envID, "project_id", projectID, "err", err)
+				}
+				if err := s.analyticsRollups.IncrementFlagEvaluationsDaily(ctx, projectID, rule.FlagID, date, 1); err != nil {
+					slog.Error("analytics flag rollup increment failed", "flag_id", rule.FlagID, "project_id", projectID, "err", err)
+				}
+			}
 		}(i, key)
 	}
 

@@ -1,0 +1,258 @@
+# Backend/Frontend Integration Guide — Project Analytics (Mock -> Real)
+
+## Purpose
+Your frontend `AnalyticsPage` (per project) needs aggregated analytics for a selectable time range (7 / 14 / 30 days), plus a small “recent activity” feed. This document defines:
+- What the backend must save (DB models / rollups)
+- What backend endpoints must expose
+- The response contract the frontend should consume
+- Where to write integration logging for API usage and activity events
+
+## Frontend needs (v1)
+For `GET /projects/:id/analytics?rangeDays=7|14|30`, the frontend expects:
+- `summary`: totals + deltas vs previous period
+- `apiCallsSeries`: time series chart data (calls + errors)
+- `evaluationsByEnvironmentSeries`: per-day evaluations split by environment
+- `topFlags`: top flags list with enabled/on status + percent delta
+- `recentActivity`: recent rule/rule-property changes (mocked for now)
+
+## Auth
+All analytics endpoints must require the same auth as other protected routes:
+- Header: `Authorization: Bearer <accessToken>`
+
+If auth fails or access token expires, the backend should return `401` so the frontend axios interceptor can refresh tokens and retry.
+
+---
+
+## DB models / data to save (recommended)
+
+### A) Daily rollups (minimum for charts)
+These tables avoid scanning raw events.
+
+1. `analytics_api_usage_daily`
+   - `project_id` (FK)
+   - `date` (UTC date, format `YYYY-MM-DD`)
+   - `calls_total` (int)
+   - `errors_total` (int)
+   - Index: `(project_id, date)`
+
+2. `analytics_env_evaluations_daily`
+   - `project_id` (FK)
+   - `environment_id` (FK)
+   - `date` (UTC date)
+   - `evaluations_total` (int)
+   - Index: `(project_id, environment_id, date)`
+
+3. `analytics_flag_evaluations_daily`
+   - `project_id` (FK)
+   - `flag_id` (FK)
+   - `date` (UTC date)
+   - `evaluations_total` (int)
+   - Index: `(project_id, flag_id, date)`
+
+### B) Activity event log (for “recent activity”)
+4. `analytics_activity_events`
+   - `id` (uuid/ulid or bigint)
+   - `project_id` (FK)
+   - `environment_id` (FK, nullable)
+   - `flag_id` (FK, nullable)
+   - `rule_id` (FK, nullable)
+   - `event_type` (string/enum)
+   - `actor_id` (FK, nullable)
+   - `occurred_at` (timestamp, UTC)
+   - `payload` (jsonb)  // for old/new values (rolloutPct, enabled, allowList, etc.)
+   - Index: `(project_id, occurred_at desc)`
+   - Index (optional): `(flag_id, occurred_at desc)`, `(rule_id)`
+
+---
+
+## Where the backend must write data (integration points)
+
+### 1) During flag evaluation requests (usage + evaluations)
+In the backend endpoint that performs flag evaluation (or in the core evaluation service it calls), write:
+1. Update `analytics_api_usage_daily`
+   - On each incoming evaluation request, increment `calls_total`
+   - Increment `errors_total` if the evaluation request fails or results in an error response (define the exact policy below)
+
+2. Update evaluation rollups:
+   - For every flag evaluation computed for that request:
+     - increment `analytics_env_evaluations_daily` for the environment(s) evaluated
+     - increment `analytics_flag_evaluations_daily` for the flag(s) evaluated
+
+Policy questions (must be finalized):
+- What counts as “an error” for `errors_total`?
+  - HTTP status >= 400?
+  - Only evaluation exceptions?
+  - Include partial failures?
+- Do you log evaluations per:
+  - per flag per request, or
+  - per environment per request, or both (frontend expects both charts)
+
+### 2) During rule changes (activity feed)
+On these endpoints, insert into `analytics_activity_events`:
+- `POST /flag-rules` (RULE_CREATED)
+- `PATCH /flag-rules/:id` (RULE_ENABLED / RULE_DISABLED / ROLLOUT_CHANGED / ALLOW_LIST_UPDATED / DENY_LIST_UPDATED / CONDITIONS_UPDATED)
+- `DELETE /flag-rules/:id` (RULE_DELETED)
+
+Set:
+- `project_id` (derived from rule->flag->project)
+- `environment_id` (from request or resolved rule)
+- `flag_id` (resolved)
+- `rule_id` (id)
+- `actor_id` (from auth user, if applicable)
+- `occurred_at` (now)
+- `payload` (old/new fields when PATCH happens)
+
+---
+
+## Endpoints (backend contract)
+
+### 1) Project Analytics
+`GET /projects/:id/analytics?rangeDays=7|14|30`
+
+Query params:
+- `rangeDays`:
+  - allowed: `7`, `14`, `30`
+
+Auth:
+- required: `Authorization: Bearer <accessToken>`
+
+Computation details:
+1. Determine time windows:
+   - `currentStart = todayUTC - rangeDays`
+   - `currentEnd = todayUTC` (exclusive)
+   - `previousStart = currentStart - rangeDays`
+   - `previousEnd = currentStart`
+2. Pull data from rollup tables in `current` and `previous`.
+3. Compute deltas:
+   - `deltaPct = ((current - previous) / previous) * 100`
+   - if `previous == 0`, define delta as:
+     - either `0` (frontend safe default) or `null` (frontend decides how to display)
+4. Top flags:
+   - group `analytics_flag_evaluations_daily` by `flag_id`
+   - sum `evaluations_total` over current window
+   - order desc and take top 5 (frontend currently displays 5)
+
+---
+
+## Response schema (must match frontend)
+
+Return JSON like:
+
+```json
+{
+  "projectId": "string",
+  "rangeDays": 14,
+  "summary": {
+    "totalCalls": 0,
+    "flagEvaluations": 0,
+    "errorRatePct": 0,
+    "activeFlags": 0,
+    "totalCallsDeltaPct": 0,
+    "flagEvaluationsDeltaPct": 0,
+    "errorRateDeltaPct": 0,
+    "activeFlagsDeltaPct": 0
+  },
+  "apiCallsSeries": [
+    { "date": "Mar 14", "dateKey": "2026-03-14", "calls": 0, "errors": 0 }
+  ],
+  "evaluationsByEnvironmentSeries": [
+    {
+      "date": "Mar 14",
+      "dateKey": "2026-03-14",
+      "byEnvironmentId": {
+        "env_1": 1200,
+        "env_2": 340
+      }
+    }
+  ],
+  "topFlags": [
+    {
+      "flagId": "flag_1",
+      "key": "dark-mode",
+      "name": "Dark mode",
+      "evaluations": 12345,
+      "enabled": true,
+      "evaluationsDeltaPct": 12
+    }
+  ],
+  "recentActivity": [
+    {
+      "eventId": "evt_1",
+      "occurredAt": "2026-03-18T12:00:00.000Z",
+      "eventType": "RULE_UPDATED",
+      "who": "User name",
+      "environmentId": "env_1",
+      "environmentName": "Production",
+      "flagId": "flag_1",
+      "flagKey": "new-dashboard",
+      "action": "Rollout changed"
+    }
+  ]
+}
+```
+
+### Required fields explanation
+- `apiCallsSeries[]`: drives “API calls over time” chart
+  - return one entry per day in the current window
+- `evaluationsByEnvironmentSeries[]`: drives “Evaluations by environment” chart
+  - each item must contain a map of `environmentId -> evaluationsTotal` for that date
+- `topFlags[]`: drives “Top flags” list
+  - must include `enabled` and percent delta for the current period
+  - `enabled` definition:
+    - recommended: enabled if there exists at least one enabled rule for that flag in any environment during the current window
+    - or define “enabled today” by reading the rule table (needs an explicit definition)
+- `recentActivity[]`: list items for the “Recent activity” feed
+  - backend may compute `action` from `eventType` + payload, or the frontend may map `eventType` -> action text
+
+---
+
+## “Active flags” definition (must confirm)
+Backend must define `activeFlags` consistently with frontend expectations:
+- Option A (recommended): count of flags that have at least one enabled rule in any environment
+- Option B: count of flags enabled in the “Production” environment only
+- Option C: count of flags with any evaluations in the window
+
+Pick one and implement it in both:
+- `summary.activeFlags`
+- `summary.activeFlagsDeltaPct`
+
+---
+
+## Event types to standardize
+Use stable `event_type` strings (examples):
+- `RULE_CREATED`
+- `RULE_DELETED`
+- `RULE_ENABLED`
+- `RULE_DISABLED`
+- `ROLLOUT_CHANGED`
+- `ALLOW_LIST_UPDATED`
+- `DENY_LIST_UPDATED`
+- `CONDITIONS_UPDATED`
+
+Frontend can show:
+- icon/color by event type
+- human action text from `action` or derived from `eventType`
+
+---
+
+## Integration checklist (backend tasks)
+1. Add/implement rollup writes in the evaluation path:
+   - `analytics_api_usage_daily`
+   - `analytics_env_evaluations_daily`
+   - `analytics_flag_evaluations_daily`
+2. Add/implement activity event writes on rule create/update/delete endpoints.
+3. Implement `GET /projects/:id/analytics?rangeDays=...`:
+   - query rollups in current + previous windows
+   - build time series arrays aligned by day
+   - compute deltas for summary metrics
+   - compute top flags and their enabled status
+   - return recent activity events (limit 10 by default)
+
+---
+
+## Open questions to finalize
+1. What endpoint is the “flag evaluation request” you want to count as `calls_total`?
+2. What counts as `errors_total` (HTTP errors vs evaluation exceptions vs both)?
+3. What exactly does `activeFlags` mean (Option A/B/C above)?
+4. How do you want to determine `enabled` in `topFlags` (exists enabled rule anywhere vs any evaluations with enabled=true, etc.)?
+

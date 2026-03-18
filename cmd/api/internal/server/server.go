@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"toggly.com/m/cmd/api/internal/apikey"
 	"toggly.com/m/cmd/api/internal/auth"
+	"toggly.com/m/cmd/api/internal/analytics"
 	"toggly.com/m/cmd/api/internal/config"
 	"toggly.com/m/cmd/api/internal/environment"
 	"toggly.com/m/cmd/api/internal/evaluation"
@@ -52,20 +53,23 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	projSvc := project.NewService(projRepo)
 	projHandler := project.NewHandler(projSvc)
 
+	analyticsSvc := analytics.NewService(db)
+	analyticsHandler := analytics.NewHandler(analyticsSvc)
+
 	flagRepo := flag.NewRepository(db)
 	flagSvc := flag.NewService(flagRepo)
 	flagHandler := flag.NewHandler(flagSvc)
 
 	flagRuleRepo := flagrule.NewRepository(db)
-	evalSvc := evaluation.New(flagRuleRepo)
+	evalSvc := evaluation.New(flagRuleRepo, analyticsSvc)
 	flagRuleSvc := flagrule.NewService(flagRuleRepo, evalSvc.InvalidateCache)
-	flagRuleHandler := flagrule.NewHandler(flagRuleSvc)
+	flagRuleHandler := flagrule.NewHandler(flagRuleSvc, analyticsSvc)
 
 	apiKeyRepo := apikey.NewRepository(db)
 	apiKeySvc := apikey.NewService(apiKeyRepo)
 	apiKeyHandler := apikey.NewHandler(apiKeySvc)
 
-	evalHandler := evaluation.NewHandler(evalSvc)
+	evalHandler := evaluation.NewHandler(evalSvc, analyticsSvc)
 
 	// Health + auth + user routes (explicit paths to avoid group path issues)
 	v1 := router.Group("/api/v1")
@@ -87,6 +91,8 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	projGroup := v1.Group("/projects")
 	projGroup.Use(middleware.Auth(cfg.JWT.Secret))
 	project.RegisterRoutes(projGroup, projHandler)
+	// Analytics endpoint (protected by Auth middleware, same as other project routes).
+	projGroup.GET("/:id/analytics", analyticsHandler.GetProjectAnalytics)
 
 	flagGroup := v1.Group("/flags")
 	flagGroup.Use(middleware.Auth(cfg.JWT.Secret))
