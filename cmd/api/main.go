@@ -17,5 +17,6 @@ func main() {
 
 	cfg := config.MustLoad()
 	db := database.Connect(cfg.DB.ConnectionString())
+
 	server.Init(db, cfg)
 }

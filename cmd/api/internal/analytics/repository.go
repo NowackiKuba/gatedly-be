@@ -57,8 +57,8 @@ func (r *repository) IncrementApiUsageDaily(ctx context.Context, projectID uuid.
 			{Name: "date"},
 		},
 		DoUpdates: clause.Assignments(map[string]any{
-			"calls_total":  gorm.Expr("calls_total + ?", callsDelta),
-			"errors_total": gorm.Expr("errors_total + ?", errorsDelta),
+			"calls_total":  gorm.Expr("\"analytics_api_usage_daily\".\"calls_total\" + ?", callsDelta),
+			"errors_total": gorm.Expr("\"analytics_api_usage_daily\".\"errors_total\" + ?", errorsDelta),
 		}),
 	}).Create(row).Error
 }
@@ -78,7 +78,7 @@ func (r *repository) IncrementEnvEvaluationsDaily(ctx context.Context, projectID
 			{Name: "date"},
 		},
 		DoUpdates: clause.Assignments(map[string]any{
-			"evaluations_total": gorm.Expr("evaluations_total + ?", evaluationsDelta),
+			"evaluations_total": gorm.Expr("\"analytics_env_evaluations_daily\".\"evaluations_total\" + ?", evaluationsDelta),
 		}),
 	}).Create(row).Error
 }
@@ -98,7 +98,7 @@ func (r *repository) IncrementFlagEvaluationsDaily(ctx context.Context, projectI
 			{Name: "date"},
 		},
 		DoUpdates: clause.Assignments(map[string]any{
-			"evaluations_total": gorm.Expr("evaluations_total + ?", evaluationsDelta),
+			"evaluations_total": gorm.Expr("\"analytics_flag_evaluations_daily\".\"evaluations_total\" + ?", evaluationsDelta),
 		}),
 	}).Create(row).Error
 }
@@ -113,11 +113,12 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 	}
 
 	// Use UTC dates so rollups + frontend charts align.
+	// Include today: current period is [currentStart, currentEnd) with currentEnd = start of tomorrow.
 	now := time.Now().UTC()
 	todayUTC := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
 	currentStart := todayUTC.AddDate(0, 0, -rangeDays)
-	currentEnd := todayUTC // exclusive
+	currentEnd := todayUTC.AddDate(0, 0, 1) // exclusive end: include today
 
 	previousStart := currentStart.AddDate(0, 0, -rangeDays)
 	previousEnd := currentStart // exclusive
@@ -146,14 +147,14 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 		envIDs = append(envIDs, e.ID)
 	}
 
-	// API usage daily series (calls + errors).
+	// API usage daily series (calls + errors). Unscoped() so soft delete doesn't filter rollup rows.
 	type apiSeriesRow struct {
 		Date        time.Time `gorm:"column:date"`
 		CallsTotal  int       `gorm:"column:calls_total"`
 		ErrorsTotal int       `gorm:"column:errors_total"`
 	}
 	var apiRows []apiSeriesRow
-	if err := r.db.WithContext(ctx).
+	if err := r.db.WithContext(ctx).Unscoped().
 		Table(domain.AnalyticsAPIUsageDaily{}.TableName()).
 		Select("date, calls_total, errors_total").
 		Where("project_id = ? AND date >= ? AND date < ?", projectID, currentStart, currentEnd).
@@ -172,7 +173,7 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 		Errors int `gorm:"column:errors"`
 	}
 	var currSums sumRow
-	if err := r.db.WithContext(ctx).
+	if err := r.db.WithContext(ctx).Unscoped().
 		Table(domain.AnalyticsAPIUsageDaily{}.TableName()).
 		Select("COALESCE(SUM(calls_total), 0) AS calls, COALESCE(SUM(errors_total), 0) AS errors").
 		Where("project_id = ? AND date >= ? AND date < ?", projectID, currentStart, currentEnd).
@@ -181,7 +182,7 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 	}
 
 	var prevSums sumRow
-	if err := r.db.WithContext(ctx).
+	if err := r.db.WithContext(ctx).Unscoped().
 		Table(domain.AnalyticsAPIUsageDaily{}.TableName()).
 		Select("COALESCE(SUM(calls_total), 0) AS calls, COALESCE(SUM(errors_total), 0) AS errors").
 		Where("project_id = ? AND date >= ? AND date < ?", projectID, previousStart, previousEnd).
@@ -199,14 +200,14 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 		prevErrorRatePct = (float64(prevSums.Errors) / float64(prevSums.Calls)) * 100
 	}
 
-	// Env evaluations series.
+	// Env evaluations series. Unscoped() so soft delete doesn't filter rollup rows.
 	type envSeriesRow struct {
 		Date             time.Time `gorm:"column:date"`
 		EnvironmentID   uuid.UUID `gorm:"column:environment_id"`
 		EvaluationsTotal int      `gorm:"column:evaluations_total"`
 	}
 	var envRows []envSeriesRow
-	if err := r.db.WithContext(ctx).
+	if err := r.db.WithContext(ctx).Unscoped().
 		Table(domain.AnalyticsEnvEvaluationsDaily{}.TableName()).
 		Select("date, environment_id, evaluations_total").
 		Where("project_id = ? AND date >= ? AND date < ?", projectID, currentStart, currentEnd).
@@ -224,9 +225,9 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 		envByDateKey[k][row.EnvironmentID] = row.EvaluationsTotal
 	}
 
-	// Flag evaluations totals + active flags + top flags.
+	// Flag evaluations totals + active flags + top flags. Unscoped() so soft delete doesn't filter rollup rows.
 	var currFlagEvalTotal int
-	if err := r.db.WithContext(ctx).
+	if err := r.db.WithContext(ctx).Unscoped().
 		Table(domain.AnalyticsFlagEvaluationsDaily{}.TableName()).
 		Select("COALESCE(SUM(evaluations_total), 0)").
 		Where("project_id = ? AND date >= ? AND date < ?", projectID, currentStart, currentEnd).
@@ -235,7 +236,7 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 	}
 
 	var prevFlagEvalTotal int
-	if err := r.db.WithContext(ctx).
+	if err := r.db.WithContext(ctx).Unscoped().
 		Table(domain.AnalyticsFlagEvaluationsDaily{}.TableName()).
 		Select("COALESCE(SUM(evaluations_total), 0)").
 		Where("project_id = ? AND date >= ? AND date < ?", projectID, previousStart, previousEnd).
@@ -244,7 +245,7 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 	}
 
 	var currActiveFlags int
-	if err := r.db.WithContext(ctx).
+	if err := r.db.WithContext(ctx).Unscoped().
 		Table(domain.AnalyticsFlagEvaluationsDaily{}.TableName()).
 		Select("COALESCE(COUNT(DISTINCT flag_id), 0)").
 		Where("project_id = ? AND date >= ? AND date < ?", projectID, currentStart, currentEnd).
@@ -253,7 +254,7 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 	}
 
 	var prevActiveFlags int
-	if err := r.db.WithContext(ctx).
+	if err := r.db.WithContext(ctx).Unscoped().
 		Table(domain.AnalyticsFlagEvaluationsDaily{}.TableName()).
 		Select("COALESCE(COUNT(DISTINCT flag_id), 0)").
 		Where("project_id = ? AND date >= ? AND date < ?", projectID, previousStart, previousEnd).
@@ -267,7 +268,7 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 		EvaluationsTotal int      `gorm:"column:evaluations_total"`
 	}
 	var topRows []flagTopRow
-	if err := r.db.WithContext(ctx).
+	if err := r.db.WithContext(ctx).Unscoped().
 		Table(domain.AnalyticsFlagEvaluationsDaily{}.TableName()).
 		Select("flag_id, SUM(evaluations_total) AS evaluations_total").
 		Where("project_id = ? AND date >= ? AND date < ?", projectID, currentStart, currentEnd).
@@ -287,7 +288,7 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 	prevByFlagID := make(map[uuid.UUID]int, len(topFlagIDs))
 	if len(topFlagIDs) > 0 {
 		var prevTopRows []flagTopRow
-		if err := r.db.WithContext(ctx).
+		if err := r.db.WithContext(ctx).Unscoped().
 			Table(domain.AnalyticsFlagEvaluationsDaily{}.TableName()).
 			Select("flag_id, SUM(evaluations_total) AS evaluations_total").
 			Where("project_id = ? AND date >= ? AND date < ? AND flag_id IN ?", projectID, previousStart, previousEnd, topFlagIDs).
@@ -349,10 +350,11 @@ func (r *repository) GetProjectAnalytics(ctx context.Context, projectID uuid.UUI
 		})
 	}
 
-	// Build series arrays for current window days.
-	apiCallsSeries := make([]ApiCallsSeriesPoint, 0, rangeDays)
-	evalsByEnvSeries := make([]EvaluationsByEnvironmentSeriesPoint, 0, rangeDays)
-	for i := 0; i < rangeDays; i++ {
+	// Build series arrays for current window days (including today to match currentEnd).
+	numPoints := rangeDays + 1
+	apiCallsSeries := make([]ApiCallsSeriesPoint, 0, numPoints)
+	evalsByEnvSeries := make([]EvaluationsByEnvironmentSeriesPoint, 0, numPoints)
+	for i := 0; i < numPoints; i++ {
 		d := currentStart.AddDate(0, 0, i)
 		dk := dateKey(d)
 

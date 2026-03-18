@@ -69,7 +69,8 @@ func evaluateConditions(group domain.ConditionGroup, attributes map[string]any) 
 }
 
 func evaluateCondition(c domain.Condition, attributes map[string]any) bool {
-	val, ok := attributes[c.Attribute]
+	// Support dotted paths (e.g. "subscription.tier") for nested attributes.
+	val, ok := getValueByPath(attributes, c.Attribute)
 	if !ok {
 		return false
 	}
