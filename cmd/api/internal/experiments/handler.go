@@ -20,18 +20,23 @@ func NewHandler(svc Service) *Handler {
 }
 
 type CreateRequest struct {
-	FlagID      uuid.UUID               `json:"flagId"`
-	Name        string                  `json:"name"`
-	Status      domain.ExperimentStatus `json:"status"`
-	ScheduledAt *time.Time              `json:"scheduledAt"`
-	EndingAt    *time.Time              `json:"endingAt"`
+	FlagID            uuid.UUID                 `json:"flagId"`
+	Name              string                    `json:"name"`
+	Status            domain.ExperimentStatus   `json:"status"`
+	TrafficPercentage *int                      `json:"trafficPercentage"`
+	Variants          domain.ExperimentVariants `json:"variants"`
+	MinimumSampleSize *int                      `json:"minimumSampleSize"`
+	ScheduledAt       *time.Time                `json:"scheduledAt"`
 }
 
 type UpdateRequest struct {
-	Name        *string                  `json:"name"`
-	Status      *domain.ExperimentStatus `json:"status"`
-	ScheduledAt *time.Time               `json:"scheduledAt"`
-	EndingAt    *time.Time               `json:"endingAt"`
+	Name              *string                   `json:"name"`
+	Status            *domain.ExperimentStatus  `json:"status"`
+	TrafficPercentage *int                      `json:"trafficPercentage"`
+	Variants          domain.ExperimentVariants `json:"variants"`
+	MinimumSampleSize *int                      `json:"minimumSampleSize"`
+	WinnerVariant     *string                   `json:"winnerVariant"`
+	ScheduledAt       *time.Time                `json:"scheduledAt"`
 }
 
 func (h *Handler) Create(c *gin.Context) {
@@ -47,8 +52,18 @@ func (h *Handler) Create(c *gin.Context) {
 		FlagID:      req.FlagID,
 		Name:        req.Name,
 		Status:      req.Status,
+		Variants:    req.Variants,
 		ScheduledAt: req.ScheduledAt,
-		EndingAt:    req.EndingAt,
+	}
+
+	if req.TrafficPercentage != nil {
+		e.TrafficPercentage = *req.TrafficPercentage
+	} else {
+		e.TrafficPercentage = 100
+	}
+
+	if req.MinimumSampleSize != nil {
+		e.MinimumSampleSize = req.MinimumSampleSize
 	}
 
 	if err := h.svc.Create(c.Request.Context(), e); err != nil {
@@ -88,17 +103,23 @@ func (h *Handler) Update(c *gin.Context) {
 	if req.Name != nil {
 		existing.Name = *req.Name
 	}
-
 	if req.Status != nil {
 		existing.Status = *req.Status
 	}
-
+	if req.TrafficPercentage != nil {
+		existing.TrafficPercentage = *req.TrafficPercentage
+	}
+	if req.Variants != nil {
+		existing.Variants = req.Variants
+	}
+	if req.MinimumSampleSize != nil {
+		existing.MinimumSampleSize = req.MinimumSampleSize
+	}
+	if req.WinnerVariant != nil {
+		existing.WinnerVariant = req.WinnerVariant
+	}
 	if req.ScheduledAt != nil {
 		existing.ScheduledAt = req.ScheduledAt
-	}
-
-	if req.EndingAt != nil {
-		existing.EndingAt = req.EndingAt
 	}
 
 	if err := h.svc.Update(c.Request.Context(), existing); err != nil {

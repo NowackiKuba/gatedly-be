@@ -27,6 +27,9 @@ func NewService(repo Repository) Service {
 }
 
 func (s *service) Create(ctx context.Context, e *domain.Experiment) error {
+	if err := validateVariants(e.Variants); err != nil {
+		return err
+	}
 	if err := s.repo.Create(ctx, e); err != nil {
 		return fmt.Errorf("create experiment: %w", err)
 	}
@@ -43,6 +46,9 @@ func (s *service) Update(ctx context.Context, e *domain.Experiment) error {
 	}
 	if existing.Status == domain.ExperimentStatusCompleted {
 		return response.BadRequest("cannot update a completed experiment")
+	}
+	if err := validateVariants(e.Variants); err != nil {
+		return err
 	}
 	if err := s.repo.Update(ctx, e); err != nil {
 		return fmt.Errorf("update experiment: %w", err)
@@ -84,4 +90,14 @@ func (s *service) GetByFlagID(ctx context.Context, filters Filters, flagID uuid.
 		return nil, fmt.Errorf("list experiments: %w", err)
 	}
 	return page, nil
+}
+
+func validateVariants(variants domain.ExperimentVariants) error {
+	if len(variants) == 0 {
+		return nil
+	}
+	if variants.TotalWeight() != 100 {
+		return response.BadRequest("variant weights must sum to 100")
+	}
+	return nil
 }

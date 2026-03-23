@@ -222,7 +222,6 @@ type Flag struct {
 	Key         string     `json:"key" gorm:"size:255;not null;uniqueIndex:idx_flag_project_key"`
 	Name        string     `json:"name" gorm:"size:255;not null"`
 	Description string     `json:"description" gorm:"type:text"`
-	Variants    JSONMap    `json:"variants" gorm:"type:jsonb"`
 	Rules       []FlagRule `json:"rules,omitempty" gorm:"foreignKey:FlagID"`
 }
 
@@ -262,6 +261,59 @@ type APIKey struct {
 // TableName returns the table name for APIKey.
 func (APIKey) TableName() string { return "api_keys" }
 
+// ExperimentVariant represents a single variant in an experiment with its traffic weight.
+type ExperimentVariant struct {
+	Key    string `json:"key"`
+	Weight int    `json:"weight"`
+}
+
+// ExperimentVariants is a slice of ExperimentVariant stored as JSONB.
+type ExperimentVariants []ExperimentVariant
+
+func (v ExperimentVariants) Value() (driver.Value, error) {
+	if v == nil {
+		return []byte(`[]`), nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("ExperimentVariants marshal: %w", err)
+	}
+	return b, nil
+}
+
+func (v *ExperimentVariants) Scan(value any) error {
+	if value == nil {
+		*v = ExperimentVariants{}
+		return nil
+	}
+	var b []byte
+	switch val := value.(type) {
+	case []byte:
+		b = val
+	case string:
+		b = []byte(val)
+	default:
+		return fmt.Errorf("ExperimentVariants scan: unsupported type %T", value)
+	}
+	if len(b) == 0 {
+		*v = ExperimentVariants{}
+		return nil
+	}
+	if err := json.Unmarshal(b, v); err != nil {
+		return fmt.Errorf("ExperimentVariants unmarshal: %w", err)
+	}
+	return nil
+}
+
+// TotalWeight returns the sum of all variant weights.
+func (v ExperimentVariants) TotalWeight() int {
+	total := 0
+	for _, variant := range v {
+		total += variant.Weight
+	}
+	return total
+}
+
 // ExperimentStatus represents the lifecycle state of an experiment.
 type ExperimentStatus string
 
@@ -275,15 +327,17 @@ const (
 // Experiment is an A/B test tied to a feature flag.
 type Experiment struct {
 	Base
-	FlagID        uuid.UUID        `json:"flagId" gorm:"type:uuid;not null;index"`
-	Flag          Flag             `json:"flag,omitempty" gorm:"foreignKey:FlagID"`
-	Name          string           `json:"name" gorm:"size:255;not null"`
-	Status        ExperimentStatus `json:"status" gorm:"size:32;not null;default:draft"`
-	WinnerVariant *string          `json:"winnerVariant" gorm:"size:255"`
-	StartedAt     *time.Time       `json:"startedAt" gorm:"type:timestamptz"`
-	ScheduledAt   *time.Time       `json:"scheduledAt" gorm:"type:timestamptz"`
-	EndingAt      *time.Time       `json:"endingAt" gorm:"type:timestamptz"`
-	EndedAt       *time.Time       `json:"endedAt" gorm:"type:timestamptz"`
+	FlagID            uuid.UUID          `json:"flagId" gorm:"type:uuid;not null;index"`
+	Flag              Flag               `json:"flag,omitempty" gorm:"foreignKey:FlagID"`
+	Name              string             `json:"name" gorm:"size:255;not null"`
+	Status            ExperimentStatus   `json:"status" gorm:"size:32;not null;default:draft"`
+	TrafficPercentage int                `json:"trafficPercentage" gorm:"not null;default:100;check:traffic_percentage >= 0 AND traffic_percentage <= 100"`
+	Variants          ExperimentVariants `json:"variants" gorm:"type:jsonb;not null;default:'[]'"`
+	MinimumSampleSize *int               `json:"minimumSampleSize" gorm:"default:null"`
+	WinnerVariant     *string            `json:"winnerVariant" gorm:"size:255"`
+	ScheduledAt       *time.Time         `json:"scheduledAt" gorm:"type:timestamptz"`
+	StartedAt         *time.Time         `json:"startedAt" gorm:"type:timestamptz"`
+	EndedAt           *time.Time         `json:"endedAt" gorm:"type:timestamptz"`
 }
 
 // TableName returns the table name for Experiment.
