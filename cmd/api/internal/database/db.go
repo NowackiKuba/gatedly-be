@@ -25,6 +25,8 @@ func Connect(dsn string) *gorm.DB {
 		&domain.AnalyticsEnvEvaluationsDaily{},
 		&domain.AnalyticsFlagEvaluationsDaily{},
 		&domain.AnalyticsActivityEvent{},
+		&domain.Experiment{},
+		&domain.ExperimentEvent{},
 	)
 
 	return db
