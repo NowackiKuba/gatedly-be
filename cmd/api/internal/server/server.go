@@ -7,12 +7,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"toggly.com/m/cmd/api/internal/analytics"
 	"toggly.com/m/cmd/api/internal/apikey"
 	"toggly.com/m/cmd/api/internal/auth"
-	"toggly.com/m/cmd/api/internal/analytics"
 	"toggly.com/m/cmd/api/internal/config"
 	"toggly.com/m/cmd/api/internal/environment"
 	"toggly.com/m/cmd/api/internal/evaluation"
+	"toggly.com/m/cmd/api/internal/experimentevent"
+	"toggly.com/m/cmd/api/internal/experiments"
 	"toggly.com/m/cmd/api/internal/flag"
 	"toggly.com/m/cmd/api/internal/flagrule"
 	"toggly.com/m/cmd/api/internal/middleware"
@@ -69,6 +71,14 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	apiKeySvc := apikey.NewService(apiKeyRepo)
 	apiKeyHandler := apikey.NewHandler(apiKeySvc)
 
+	experimentsRepo := experiments.NewRepository(db)
+	experimentsSvc := experiments.NewService(experimentsRepo)
+	experimentsHandler := experiments.NewHandler(experimentsSvc)
+
+	experimentEventRepo := experimentevent.NewRepository(db)
+	experimentEventSvc := experimentevent.NewService(experimentEventRepo)
+	experimentEventHandler := experimentevent.NewHandler(experimentEventSvc)
+
 	evalHandler := evaluation.NewHandler(evalSvc, analyticsSvc)
 
 	// Health + auth + user routes (explicit paths to avoid group path issues)
@@ -106,9 +116,21 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	apiKeysGroup.Use(middleware.Auth(cfg.JWT.Secret))
 	apikey.RegisterRoutes(apiKeysGroup, apiKeyHandler)
 
+	experimentGroup := v1.Group("/experiments")
+	experimentGroup.Use(middleware.Auth(cfg.JWT.Secret))
+	experiments.RegisterRoutes(experimentGroup, experimentsHandler)
+
 	evalGroup := v1.Group("/evaluation")
 	evalGroup.Use(middleware.APIKeyAuth(apiKeySvc))
 	evaluation.RegisterRoutes(evalGroup, evalHandler)
+
+	experimentEventGroup := v1.Group("/experiment-events")
+	experimentEventGroup.Use(middleware.Auth(cfg.JWT.Secret))
+	experimentevent.RegisterRoutes(experimentEventGroup, experimentEventHandler)
+
+	experimentEventPostGroup := v1.Group("/experiment-events")
+	experimentEventPostGroup.Use(middleware.APIKeyAuth(apiKeySvc))
+	experimentEventPostGroup.POST("", experimentEventHandler.Create)
 	//
 
 	// Log all registered API routes (Gin's Routes() can be incomplete with groups)

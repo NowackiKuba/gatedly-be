@@ -109,9 +109,9 @@ const (
 
 // Condition represents a single attribute comparison.
 type Condition struct {
-	Attribute string         `json:"attribute"`
+	Attribute string          `json:"attribute"`
 	Operator  CompareOperator `json:"operator"`
-	Value     any            `json:"value"`
+	Value     any             `json:"value"`
 }
 
 // ConditionGroup is a group of conditions combined by AND or OR (stored as JSONB).
@@ -218,12 +218,12 @@ func (Environment) TableName() string { return "environments" }
 // Flag belongs to a Project and has many FlagRules.
 type Flag struct {
 	Base
-	ProjectID   uuid.UUID `json:"projectId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_project_key"`
-	Key         string    `json:"key" gorm:"size:255;not null;uniqueIndex:idx_flag_project_key"`
-	Name        string    `json:"name" gorm:"size:255;not null"`
-	Description string    `json:"description" gorm:"type:text"`
-
-	Rules []FlagRule `json:"rules,omitempty" gorm:"foreignKey:FlagID"`
+	ProjectID   uuid.UUID  `json:"projectId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_project_key"`
+	Key         string     `json:"key" gorm:"size:255;not null;uniqueIndex:idx_flag_project_key"`
+	Name        string     `json:"name" gorm:"size:255;not null"`
+	Description string     `json:"description" gorm:"type:text"`
+	Variants    JSONMap    `json:"variants" gorm:"type:jsonb"`
+	Rules       []FlagRule `json:"rules,omitempty" gorm:"foreignKey:FlagID"`
 }
 
 // TableName returns the table name for Flag.
@@ -232,14 +232,14 @@ func (Flag) TableName() string { return "flags" }
 // FlagRule defines per-environment rule for a flag.
 type FlagRule struct {
 	Base
-	FlagID        uuid.UUID       `json:"flagId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
-	EnvironmentID uuid.UUID       `json:"environmentId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
-	Enabled       bool            `json:"enabled" gorm:"not null;default:false"`
-	RolloutPct    int             `json:"rolloutPct" gorm:"not null;default:0;check:rollout_pct >= 0 AND rollout_pct <= 100"`
-	AllowList     StringArray     `json:"allowList" gorm:"type:text[]"`
-	DenyList      StringArray     `json:"denyList" gorm:"type:text[]"`
-	Conditions    ConditionGroup   `json:"conditions" gorm:"type:jsonb;default:'{}'"`
-	UpdatedBy     uuid.UUID       `json:"updatedBy" gorm:"type:uuid;not null"`
+	FlagID        uuid.UUID      `json:"flagId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
+	EnvironmentID uuid.UUID      `json:"environmentId" gorm:"type:uuid;not null;uniqueIndex:idx_flag_rule_flag_env"`
+	Enabled       bool           `json:"enabled" gorm:"not null;default:false"`
+	RolloutPct    int            `json:"rolloutPct" gorm:"not null;default:0;check:rollout_pct >= 0 AND rollout_pct <= 100"`
+	AllowList     StringArray    `json:"allowList" gorm:"type:text[]"`
+	DenyList      StringArray    `json:"denyList" gorm:"type:text[]"`
+	Conditions    ConditionGroup `json:"conditions" gorm:"type:jsonb;default:'{}'"`
+	UpdatedBy     uuid.UUID      `json:"updatedBy" gorm:"type:uuid;not null"`
 
 	// Flag is populated when preloading (e.g. in evaluation cache). Not stored as a column.
 	Flag *Flag `json:"flag,omitempty" gorm:"foreignKey:FlagID"`
@@ -261,3 +261,53 @@ type APIKey struct {
 
 // TableName returns the table name for APIKey.
 func (APIKey) TableName() string { return "api_keys" }
+
+// ExperimentStatus represents the lifecycle state of an experiment.
+type ExperimentStatus string
+
+const (
+	ExperimentStatusDraft     ExperimentStatus = "draft"
+	ExperimentStatusRunning   ExperimentStatus = "running"
+	ExperimentStatusPaused    ExperimentStatus = "paused"
+	ExperimentStatusCompleted ExperimentStatus = "completed"
+)
+
+// Experiment is an A/B test tied to a feature flag.
+type Experiment struct {
+	Base
+	FlagID        uuid.UUID        `json:"flagId" gorm:"type:uuid;not null;index"`
+	Flag          Flag             `json:"flag,omitempty" gorm:"foreignKey:FlagID"`
+	Name          string           `json:"name" gorm:"size:255;not null"`
+	Status        ExperimentStatus `json:"status" gorm:"size:32;not null;default:draft"`
+	WinnerVariant *string          `json:"winnerVariant" gorm:"size:255"`
+	StartedAt     *time.Time       `json:"startedAt" gorm:"type:timestamptz"`
+	ScheduledAt   *time.Time       `json:"scheduledAt" gorm:"type:timestamptz"`
+	EndingAt      *time.Time       `json:"endingAt" gorm:"type:timestamptz"`
+	EndedAt       *time.Time       `json:"endedAt" gorm:"type:timestamptz"`
+}
+
+// TableName returns the table name for Experiment.
+func (Experiment) TableName() string { return "experiments" }
+
+// ExperimentEventType represents the kind of event tracked in an experiment.
+type ExperimentEventType string
+
+const (
+	ExperimentEventImpression ExperimentEventType = "impression"
+	ExperimentEventConversion ExperimentEventType = "conversion"
+	ExperimentEventCustom     ExperimentEventType = "custom"
+)
+
+// ExperimentEvent records a single user interaction within an experiment.
+type ExperimentEvent struct {
+	Base
+	ExperimentID uuid.UUID           `json:"experimentId" gorm:"type:uuid;not null;index"`
+	Experiment   Experiment          `json:"experiment,omitempty" gorm:"foreignKey:ExperimentID"`
+	UserID       string              `json:"userId" gorm:"size:255;not null;index"`
+	Variant      string              `json:"variant" gorm:"size:255;not null"`
+	EventType    ExperimentEventType `json:"eventType" gorm:"size:32;not null"`
+	Metadata     JSONMap             `json:"metadata" gorm:"type:jsonb"`
+}
+
+// TableName returns the table name for ExperimentEvent.
+func (ExperimentEvent) TableName() string { return "experiment_events" }
