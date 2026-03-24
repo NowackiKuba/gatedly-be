@@ -37,13 +37,13 @@ type VariantEventBreakdown struct {
 }
 
 type SummaryResponse struct {
-	ExperimentID     string                `json:"experimentId"`
-	TotalImpressions int                   `json:"totalImpressions"`
-	TotalConversions int                   `json:"totalConversions"`
-	TotalCustom      int                   `json:"totalCustom"`
-	ConversionRate   int                   `json:"conversionRate"`
-	VariantBreakdown VariantEventBreakdown `json:"variantBreakdown"`
-	UnqiueUsers      int                   `json:"uniqueUsers"`
+	ExperimentID     string                  `json:"experimentId"`
+	TotalImpressions int                     `json:"totalImpressions"`
+	TotalConversions int                     `json:"totalConversions"`
+	TotalCustom      int                     `json:"totalCustom"`
+	ConversionRate   int                     `json:"conversionRate"`
+	VariantBreakdown []VariantEventBreakdown `json:"variantBreakdown"`
+	UnqiueUsers      int                     `json:"uniqueUsers"`
 }
 
 func (h *Handler) Create(c *gin.Context) {
@@ -233,10 +233,9 @@ func (h *Handler) GetExperimentEventsSummary(c *gin.Context) {
 	}
 
 	// flatten variant breakdown (return first variant; extend to slice if needed)
-	var breakdown VariantEventBreakdown
+	var breakdown []VariantEventBreakdown
 	for _, v := range variantMap {
-		breakdown = *v
-		break
+		breakdown = append(breakdown, *v)
 	}
 
 	conversionRate := 0
