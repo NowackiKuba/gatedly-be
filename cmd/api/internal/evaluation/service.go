@@ -103,7 +103,7 @@ func (s *Service) startRefresh() {
 
 // reload fetches all rules from the database and replaces the cache atomically.
 func (s *Service) reload(ctx context.Context) error {
-	rules, err := s.repo.GetAll(ctx)
+	rules, err := s.repo.GetAllWithExperiments(ctx)
 	if err != nil {
 		return fmt.Errorf("evaluation reload: %w", err)
 	}

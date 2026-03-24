@@ -9,6 +9,7 @@ import (
 )
 
 func Evaluate(rule domain.FlagRule, userID string, attributes map[string]any) EvaluationResult {
+	fmt.Print(rule.Experiment)
 	if !rule.Enabled {
 		return EvaluationResult{Enabled: false, Reason: string(ReasonDisabled)}
 	}
@@ -31,6 +32,7 @@ func Evaluate(rule domain.FlagRule, userID string, attributes map[string]any) Ev
 
 	// Experiment check comes AFTER conditions but BEFORE rollout
 	if rule.Experiment != nil && rule.Experiment.Status == domain.ExperimentStatusRunning {
+		fmt.Print("HAS EXPERIMENT")
 		return evaluateExperiment(rule.Experiment, userID)
 	}
 
@@ -104,6 +106,7 @@ func evaluateCondition(c domain.Condition, attributes map[string]any) bool {
 }
 
 func evaluateExperiment(exp *domain.Experiment, userID string) EvaluationResult {
+	fmt.Print("EVALUATING EXPERIMENT")
 	if bucket(userID) >= exp.TrafficPercentage {
 		return EvaluationResult{Enabled: false, Reason: string(ReasonDisabled)}
 	}

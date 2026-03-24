@@ -24,6 +24,7 @@ type Repository interface {
 	GetByFlagIdAndEnvironmentId(ctx context.Context, flagID, environmentID uuid.UUID) (*domain.FlagRule, error)
 	GetByFlagId(ctx context.Context, filters Filters, flagID uuid.UUID) (*pagination.Page[domain.FlagRule], error)
 	GetAll(ctx context.Context) ([]domain.FlagRule, error)
+	GetAllWithExperiments(ctx context.Context) ([]domain.FlagRule, error)
 	GetAllByFlagId(ctx context.Context, flagID uuid.UUID) ([]domain.FlagRule, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
@@ -59,6 +60,20 @@ func (r *repository) GetById(ctx context.Context, id uuid.UUID) (*domain.FlagRul
 		}
 		return nil, fmt.Errorf("flagrule get by id: %w", err)
 	}
+
+	var experiment domain.Experiment
+	expErr := r.db.WithContext(ctx).
+		Where("flag_id = ? AND environment_id = ? AND status = ?",
+			rule.FlagID,
+			rule.EnvironmentID,
+			domain.ExperimentStatusRunning).
+		First(&experiment).Error
+
+	fmt.Printf("EXPERIMENT IN REPO %w", experiment)
+	if expErr == nil {
+		rule.Experiment = &experiment
+	}
+
 	return &rule, nil
 }
 
@@ -118,21 +133,30 @@ func (r *repository) GetAll(ctx context.Context) ([]domain.FlagRule, error) {
 		Find(&list).Error; err != nil {
 		return nil, fmt.Errorf("flagrule get all: %w", err)
 	}
+	return list, nil
+}
 
-	// Manually load running experiments for each flag rule
-	// for i := range list {
-	// 	var experiment domain.Experiment
-	// 	err := r.db.WithContext(ctx).
-	// 		Where("flag_id = ? AND environment_id = ? AND status = ?",
-	// 			list[i].FlagID,
-	// 			list[i].EnvironmentID,
-	// 			domain.ExperimentStatusRunning).
-	// 		First(&experiment).Error
+func (r *repository) GetAllWithExperiments(ctx context.Context) ([]domain.FlagRule, error) {
+	var list []domain.FlagRule
+	if err := r.db.WithContext(ctx).
+		Preload("Flag").
+		Order("created_at ASC").
+		Find(&list).Error; err != nil {
+		return nil, fmt.Errorf("flagrule get all with experiments: %w", err)
+	}
 
-	// 	if err == nil {
-	// 		list[i].Experiment = &experiment
-	// 	}
-	// }
+	for i := range list {
+		var experiment domain.Experiment
+		err := r.db.WithContext(ctx).
+			Where("flag_id = ? AND environment_id = ? AND status = ?",
+				list[i].FlagID,
+				list[i].EnvironmentID,
+				domain.ExperimentStatusRunning).
+			First(&experiment).Error
+		if err == nil {
+			list[i].Experiment = &experiment
+		}
+	}
 
 	return list, nil
 }
