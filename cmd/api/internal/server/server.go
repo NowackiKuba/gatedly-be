@@ -126,7 +126,12 @@ func Init(db *gorm.DB, cfg *config.Config) {
 
 	experimentEventGroup := v1.Group("/experiment-events")
 	experimentEventGroup.Use(middleware.APIKeyAuth(apiKeySvc))
-	experimentevent.RegisterRoutes(experimentEventGroup, experimentEventHandler)
+	experimentEventGroup.POST("", experimentEventHandler.Create)
+
+	experimentEventAuthGroup := v1.Group("/experiment-events")
+	experimentEventAuthGroup.Use(middleware.Auth(cfg.JWT.Secret))
+	experimentEventAuthGroup.GET("/:id", experimentEventHandler.GetByExperimentID)
+	experimentEventAuthGroup.GET("/:id/summary", experimentEventHandler.GetExperimentEventsSummary)
 	//
 
 	// Log all registered API routes (Gin's Routes() can be incomplete with groups)

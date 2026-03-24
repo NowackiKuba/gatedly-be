@@ -15,7 +15,7 @@ type Service interface {
 	Update(ctx context.Context, e *domain.Experiment) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Experiment, error)
-	GetByFlagID(ctx context.Context, filters Filters, flagID uuid.UUID) (*pagination.Page[domain.Experiment], error)
+	GetByFlagID(ctx context.Context, filters Filters, flagID, environmentID uuid.UUID) (*pagination.Page[domain.Experiment], error)
 }
 
 type service struct {
@@ -84,8 +84,8 @@ func (s *service) GetByID(ctx context.Context, id uuid.UUID) (*domain.Experiment
 	return e, nil
 }
 
-func (s *service) GetByFlagID(ctx context.Context, filters Filters, flagID uuid.UUID) (*pagination.Page[domain.Experiment], error) {
-	page, err := s.repo.GetByFlagID(ctx, filters, flagID)
+func (s *service) GetByFlagID(ctx context.Context, filters Filters, flagID, environmentID uuid.UUID) (*pagination.Page[domain.Experiment], error) {
+	page, err := s.repo.GetByFlagID(ctx, filters, flagID, environmentID)
 	if err != nil {
 		return nil, fmt.Errorf("list experiments: %w", err)
 	}

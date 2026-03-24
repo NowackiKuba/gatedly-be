@@ -1,6 +1,7 @@
 package experimentevent
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -24,6 +25,25 @@ type CreateRequest struct {
 	Variant      string                     `json:"variant"`
 	EventType    domain.ExperimentEventType `json:"eventType"`
 	Metadata     domain.JSONMap             `json:"metadata"`
+}
+
+type VariantEventBreakdown struct {
+	Variant        string `json:"variant"`
+	Impressions    int    `json:"impressions"`
+	Conversions    int    `json:"conversions"`
+	CustomEvents   int    `json:"customEvents"`
+	ConversionRate int    `json:"conversionRate"`
+	UniqueUsers    int    `json:"uniqueUsers"`
+}
+
+type SummaryResponse struct {
+	ExperimentID     string                `json:"experimentId"`
+	TotalImpressions int                   `json:"totalImpressions"`
+	TotalConversions int                   `json:"totalConversions"`
+	TotalCustom      int                   `json:"totalCustom"`
+	ConversionRate   int                   `json:"conversionRate"`
+	VariantBreakdown VariantEventBreakdown `json:"variantBreakdown"`
+	UnqiueUsers      int                   `json:"uniqueUsers"`
 }
 
 func (h *Handler) Create(c *gin.Context) {
@@ -73,7 +93,7 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 func (h *Handler) GetByExperimentID(c *gin.Context) {
-	experimentIDParam := c.Query("experimentId")
+	experimentIDParam := c.Param("id")
 	if experimentIDParam == "" {
 		response.Error(c.Writer, response.BadRequest("experimentId is required"))
 		c.Abort()
@@ -87,9 +107,10 @@ func (h *Handler) GetByExperimentID(c *gin.Context) {
 		return
 	}
 
+	fmt.Printf("LIMIT: %s", c.Query("limit"))
 	limit := parseIntDefault(c.Query("limit"), 20)
 	offset := parseIntDefault(c.Query("offset"), 0)
-	orderBy := c.DefaultQuery("orderBy", "desc")
+	orderBy := c.DefaultQuery("orderBy", "DESC")
 	orderByField := c.DefaultQuery("orderByField", "created_at")
 
 	var eventType *domain.ExperimentEventType
@@ -125,4 +146,113 @@ func parseIntDefault(s string, def int) int {
 		return def
 	}
 	return v
+}
+
+func (h *Handler) GetExperimentEventsSummary(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+
+	if err != nil {
+		response.Error(c.Writer, response.BadRequest("invalid event id"))
+		c.Abort()
+		return
+	}
+
+	hasMore := true
+	limit := 100
+	offset := 0
+
+	var events []domain.ExperimentEvent
+
+	for hasMore {
+		res, err := h.svc.GetByExperimentID(c.Request.Context(), Filters{
+			Limit:        limit,
+			Offset:       offset,
+			OrderBy:      "desc",
+			OrderByField: "created_at",
+		}, id)
+
+		if err != nil {
+			response.Error(c.Writer, err)
+			c.Abort()
+			return
+		}
+
+		events = append(events, res.Data...)
+
+		hasMore = res.Page.HasNextPage
+
+		offset += limit
+	}
+
+	// aggregate counts across all fetched events
+	variantMap := make(map[string]*VariantEventBreakdown)
+	uniqueUsers := make(map[string]struct{})
+
+	for _, e := range events {
+		uniqueUsers[e.UserID] = struct{}{}
+
+		if _, ok := variantMap[e.Variant]; !ok {
+			variantMap[e.Variant] = &VariantEventBreakdown{Variant: e.Variant}
+		}
+		v := variantMap[e.Variant]
+
+		variantUniqueKey := e.Variant + "|" + e.UserID
+		_ = variantUniqueKey // tracked per-variant below via a separate set if needed
+
+		switch e.EventType {
+		case domain.ExperimentEventImpression:
+			v.Impressions++
+		case domain.ExperimentEventConversion:
+			v.Conversions++
+		case domain.ExperimentEventCustom:
+			v.CustomEvents++
+		}
+	}
+
+	totalImpressions := 0
+	totalConversions := 0
+	totalCustom := 0
+
+	// build per-variant unique user sets
+	variantUsers := make(map[string]map[string]struct{})
+	for _, e := range events {
+		if _, ok := variantUsers[e.Variant]; !ok {
+			variantUsers[e.Variant] = make(map[string]struct{})
+		}
+		variantUsers[e.Variant][e.UserID] = struct{}{}
+	}
+
+	for variant, v := range variantMap {
+		if v.Impressions > 0 {
+			v.ConversionRate = (v.Conversions * 100) / v.Impressions
+		}
+		v.UniqueUsers = len(variantUsers[variant])
+		totalImpressions += v.Impressions
+		totalConversions += v.Conversions
+		totalCustom += v.CustomEvents
+	}
+
+	// flatten variant breakdown (return first variant; extend to slice if needed)
+	var breakdown VariantEventBreakdown
+	for _, v := range variantMap {
+		breakdown = *v
+		break
+	}
+
+	conversionRate := 0
+	if totalImpressions > 0 {
+		conversionRate = (totalConversions * 100) / totalImpressions
+	}
+
+	result := SummaryResponse{
+		ExperimentID:     id.String(),
+		TotalImpressions: totalImpressions,
+		TotalConversions: totalConversions,
+		TotalCustom:      totalCustom,
+		ConversionRate:   conversionRate,
+		VariantBreakdown: breakdown,
+		UnqiueUsers:      len(uniqueUsers),
+	}
+
+	response.JSON(c.Writer, http.StatusOK, result)
 }

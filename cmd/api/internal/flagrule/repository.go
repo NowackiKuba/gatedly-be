@@ -114,11 +114,26 @@ func (r *repository) GetAll(ctx context.Context) ([]domain.FlagRule, error) {
 	var list []domain.FlagRule
 	if err := r.db.WithContext(ctx).
 		Preload("Flag").
-		Preload("Experiment", "status = ?", domain.ExperimentStatusRunning).
 		Order("created_at ASC").
 		Find(&list).Error; err != nil {
 		return nil, fmt.Errorf("flagrule get all: %w", err)
 	}
+
+	// Manually load running experiments for each flag rule
+	// for i := range list {
+	// 	var experiment domain.Experiment
+	// 	err := r.db.WithContext(ctx).
+	// 		Where("flag_id = ? AND environment_id = ? AND status = ?",
+	// 			list[i].FlagID,
+	// 			list[i].EnvironmentID,
+	// 			domain.ExperimentStatusRunning).
+	// 		First(&experiment).Error
+
+	// 	if err == nil {
+	// 		list[i].Experiment = &experiment
+	// 	}
+	// }
+
 	return list, nil
 }
 
