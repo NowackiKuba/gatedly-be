@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"toggly.com/m/cmd/api/internal/domain"
 	"toggly.com/m/cmd/api/internal/analytics"
+	"toggly.com/m/cmd/api/internal/domain"
 	"toggly.com/m/cmd/api/internal/flagrule"
 )
 
@@ -40,7 +40,7 @@ func New(repo flagrule.Repository, analyticsRollups *analytics.Service) *Service
 		cache:  make(map[cacheKey]domain.FlagRule),
 		stopCh: make(chan struct{}),
 		// Buffer of 1 so the sender never blocks if a reload is already pending.
-		reloadCh: make(chan struct{}, 1),
+		reloadCh:         make(chan struct{}, 1),
 		analyticsRollups: analyticsRollups,
 	}
 
@@ -191,7 +191,7 @@ func (s *Service) EvaluateBatch(ctx context.Context, envID uuid.UUID, flagKeys [
 
 			rule, ok := s.get(envID, key)
 			if !ok {
-				results[i] = EvaluationResult{FlagKey: key, Enabled: false, Reason: ReasonDisabled}
+				results[i] = EvaluationResult{FlagKey: key, Enabled: false, Reason: string(ReasonDisabled)}
 				return
 			}
 

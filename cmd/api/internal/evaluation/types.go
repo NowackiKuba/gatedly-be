@@ -17,7 +17,7 @@ const (
 type EvaluationResult struct {
 	FlagKey      string `json:"flagKey"`
 	Enabled      bool   `json:"enabled"`
-	Reason       Reason `json:"reason"`
-	Variant      string `json:"variant"`
-	ExperimentID string `json:"experimentId"`
+	Reason       string `json:"reason"`
+	Variant      string `json:"variant,omitempty"`
+	ExperimentID string `json:"experimentId,omitempty"`
 }

@@ -10,23 +10,23 @@ import (
 
 func Evaluate(rule domain.FlagRule, userID string, attributes map[string]any) EvaluationResult {
 	if !rule.Enabled {
-		return EvaluationResult{Enabled: false, Reason: ReasonDisabled}
+		return EvaluationResult{Enabled: false, Reason: string(ReasonDisabled)}
 	}
 
 	for _, id := range rule.DenyList {
 		if id == userID {
-			return EvaluationResult{Enabled: false, Reason: ReasonDenyList}
+			return EvaluationResult{Enabled: false, Reason: string(ReasonDenyList)}
 		}
 	}
 
 	for _, id := range rule.AllowList {
 		if id == userID {
-			return EvaluationResult{Enabled: true, Reason: ReasonAllowList}
+			return EvaluationResult{Enabled: true, Reason: string(ReasonAllowList)}
 		}
 	}
 
 	if !evaluateConditions(rule.Conditions, attributes) {
-		return EvaluationResult{Enabled: false, Reason: ReasonConditions}
+		return EvaluationResult{Enabled: false, Reason: string(ReasonConditions)}
 	}
 
 	// Experiment check comes AFTER conditions but BEFORE rollout
@@ -35,14 +35,14 @@ func Evaluate(rule domain.FlagRule, userID string, attributes map[string]any) Ev
 	}
 
 	if rule.RolloutPct >= 100 {
-		return EvaluationResult{Enabled: true, Reason: ReasonEnabled}
+		return EvaluationResult{Enabled: true, Reason: string(ReasonEnabled)}
 	}
 
 	if rule.RolloutPct > 0 && bucket(userID) < rule.RolloutPct {
-		return EvaluationResult{Enabled: true, Reason: ReasonRollout}
+		return EvaluationResult{Enabled: true, Reason: string(ReasonRollout)}
 	}
 
-	return EvaluationResult{Enabled: false, Reason: ReasonDisabled}
+	return EvaluationResult{Enabled: false, Reason: string(ReasonDisabled)}
 }
 
 func evaluateConditions(group domain.ConditionGroup, attributes map[string]any) bool {
@@ -105,14 +105,14 @@ func evaluateCondition(c domain.Condition, attributes map[string]any) bool {
 
 func evaluateExperiment(exp *domain.Experiment, userID string) EvaluationResult {
 	if bucket(userID) >= exp.TrafficPercentage {
-		return EvaluationResult{Enabled: false, Reason: ReasonDisabled}
+		return EvaluationResult{Enabled: false, Reason: string(ReasonDisabled)}
 	}
 
 	variant := assignVariant(exp.Variants, userID, exp.ID.String())
 
 	return EvaluationResult{
 		Enabled:      true,
-		Reason:       ReasonExperiment,
+		Reason:       string(ReasonExperiment),
 		Variant:      variant,
 		ExperimentID: exp.ID.String(),
 	}

@@ -114,6 +114,7 @@ func (r *repository) GetAll(ctx context.Context) ([]domain.FlagRule, error) {
 	var list []domain.FlagRule
 	if err := r.db.WithContext(ctx).
 		Preload("Flag").
+		Preload("Experiment", "status = ?", domain.ExperimentStatusRunning).
 		Order("created_at ASC").
 		Find(&list).Error; err != nil {
 		return nil, fmt.Errorf("flagrule get all: %w", err)
