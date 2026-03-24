@@ -22,7 +22,7 @@ type Repository interface {
 	Update(ctx context.Context, e *domain.Experiment) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Experiment, error)
-	GetByFlagID(ctx context.Context, filters Filters, flagId uuid.UUID) (*pagination.Page[domain.Experiment], error)
+	GetByFlagID(ctx context.Context, filters Filters, flagId, environmentId uuid.UUID) (*pagination.Page[domain.Experiment], error)
 }
 
 type repository struct {
@@ -71,7 +71,7 @@ func (r *repository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Experim
 
 }
 
-func (r *repository) GetByFlagID(ctx context.Context, filters Filters, flagId uuid.UUID) (*pagination.Page[domain.Experiment], error) {
+func (r *repository) GetByFlagID(ctx context.Context, filters Filters, flagId, environmentId uuid.UUID) (*pagination.Page[domain.Experiment], error) {
 	var list []domain.Experiment
 
 	orderField := filters.OrderByField
@@ -92,13 +92,13 @@ func (r *repository) GetByFlagID(ctx context.Context, filters Filters, flagId uu
 
 	if err := r.db.WithContext(ctx).
 		Model(&domain.Experiment{}).
-		Where("flag_id = ?", flagId).
+		Where("flag_id = ? AND environment_id = ?", flagId, environmentId).
 		Count(&total).Error; err != nil {
 		return nil, err
 	}
 
 	if err := r.db.WithContext(ctx).
-		Where("flag_id = ?", flagId).
+		Where("flag_id = ? AND environment_id = ?", flagId, environmentId).
 		Order(orderParam).
 		Limit(filters.Limit).
 		Offset(filters.Offset).

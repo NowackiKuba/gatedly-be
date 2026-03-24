@@ -3,6 +3,7 @@ package experiments
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +11,43 @@ import (
 	"toggly.com/m/cmd/api/internal/domain"
 	"toggly.com/m/pkg/response"
 )
+
+// FlexibleTime handles multiple timestamp formats
+type FlexibleTime struct {
+	time.Time
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for FlexibleTime
+func (ft *FlexibleTime) UnmarshalJSON(data []byte) error {
+	str := strings.Trim(string(data), "\"")
+	if str == "" || str == "null" {
+		ft.Time = time.Time{}
+		return nil
+	}
+
+	// Try RFC3339 format first
+	if t, err := time.Parse(time.RFC3339, str); err == nil {
+		ft.Time = t
+		return nil
+	}
+
+	// Try format without timezone (YYYY-MM-DDTHH:MM)
+	if t, err := time.Parse("2006-01-02T15:04", str); err == nil {
+		ft.Time = t
+		return nil
+	}
+
+	// Try format with just date (YYYY-MM-DD)
+	if t, err := time.Parse("2006-01-02", str); err == nil {
+		ft.Time = t
+		return nil
+	}
+
+	return &time.ParseError{
+		Layout: time.RFC3339,
+		Value:  str,
+	}
+}
 
 type Handler struct {
 	svc Service
@@ -21,12 +59,13 @@ func NewHandler(svc Service) *Handler {
 
 type CreateRequest struct {
 	FlagID            uuid.UUID                 `json:"flagId"`
+	EnvironmentID     uuid.UUID                 `json:"environmentId"`
 	Name              string                    `json:"name"`
 	Status            domain.ExperimentStatus   `json:"status"`
 	TrafficPercentage *int                      `json:"trafficPercentage"`
 	Variants          domain.ExperimentVariants `json:"variants"`
 	MinimumSampleSize *int                      `json:"minimumSampleSize"`
-	ScheduledAt       *time.Time                `json:"scheduledAt"`
+	ScheduledAt       *FlexibleTime             `json:"scheduledAt"`
 }
 
 type UpdateRequest struct {
@@ -36,7 +75,7 @@ type UpdateRequest struct {
 	Variants          domain.ExperimentVariants `json:"variants"`
 	MinimumSampleSize *int                      `json:"minimumSampleSize"`
 	WinnerVariant     *string                   `json:"winnerVariant"`
-	ScheduledAt       *time.Time                `json:"scheduledAt"`
+	ScheduledAt       *FlexibleTime             `json:"scheduledAt"`
 }
 
 func (h *Handler) Create(c *gin.Context) {
@@ -48,12 +87,22 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
+	if req.EnvironmentID == uuid.Nil {
+		response.Error(c.Writer, response.BadRequest("environmentId is required"))
+		c.Abort()
+		return
+	}
+
 	e := &domain.Experiment{
-		FlagID:      req.FlagID,
-		Name:        req.Name,
-		Status:      req.Status,
-		Variants:    req.Variants,
-		ScheduledAt: req.ScheduledAt,
+		FlagID:        req.FlagID,
+		EnvironmentID: req.EnvironmentID,
+		Name:          req.Name,
+		Status:        req.Status,
+		Variants:      req.Variants,
+	}
+
+	if req.ScheduledAt != nil {
+		e.ScheduledAt = &req.ScheduledAt.Time
 	}
 
 	if req.TrafficPercentage != nil {
@@ -119,7 +168,7 @@ func (h *Handler) Update(c *gin.Context) {
 		existing.WinnerVariant = req.WinnerVariant
 	}
 	if req.ScheduledAt != nil {
-		existing.ScheduledAt = req.ScheduledAt
+		existing.ScheduledAt = &req.ScheduledAt.Time
 	}
 
 	if err := h.svc.Update(c.Request.Context(), existing); err != nil {
@@ -153,9 +202,10 @@ func (h *Handler) GetByID(c *gin.Context) {
 
 func (h *Handler) GetByFlagID(c *gin.Context) {
 	flagIDParam := c.Query("flagId")
+	environmentIDParam := c.Query("environmentId")
 
-	if flagIDParam == "" {
-		response.Error(c.Writer, response.BadRequest("flag id is required"))
+	if flagIDParam == "" || environmentIDParam == "" {
+		response.Error(c.Writer, response.BadRequest("flagId and environmentId are required"))
 		c.Abort()
 		return
 	}
@@ -164,6 +214,14 @@ func (h *Handler) GetByFlagID(c *gin.Context) {
 
 	if err != nil {
 		response.Error(c.Writer, response.BadRequest("invalid flag id"))
+		c.Abort()
+		return
+	}
+
+	environmentID, err := uuid.Parse(environmentIDParam)
+
+	if err != nil {
+		response.Error(c.Writer, response.BadRequest("invalid environment id"))
 		c.Abort()
 		return
 	}
@@ -180,7 +238,7 @@ func (h *Handler) GetByFlagID(c *gin.Context) {
 		OrderByField: orderByField,
 	}
 
-	page, err := h.svc.GetByFlagID(c.Request.Context(), filters, flagID)
+	page, err := h.svc.GetByFlagID(c.Request.Context(), filters, flagID, environmentID)
 
 	if err != nil {
 		response.Error(c.Writer, err)

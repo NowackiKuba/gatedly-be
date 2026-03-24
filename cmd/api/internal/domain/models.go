@@ -242,7 +242,7 @@ type FlagRule struct {
 
 	// Flag is populated when preloading (e.g. in evaluation cache). Not stored as a column.
 	Flag       *Flag      `json:"flag,omitempty" gorm:"foreignKey:FlagID"`
-	Experiment *Experiment `json:"experiment,omitempty" gorm:"foreignKey:FlagID"`
+	Experiment *Experiment `json:"experiment,omitempty" gorm:"-"`
 }
 
 // TableName returns the table name for FlagRule.
@@ -330,6 +330,8 @@ type Experiment struct {
 	Base
 	FlagID            uuid.UUID          `json:"flagId" gorm:"type:uuid;not null;index"`
 	Flag              Flag               `json:"flag,omitempty" gorm:"foreignKey:FlagID"`
+	EnvironmentID     uuid.UUID          `json:"environmentId" gorm:"type:uuid;not null;index"`
+	Environment       Environment        `json:"environment,omitempty" gorm:"foreignKey:EnvironmentID"`
 	Name              string             `json:"name" gorm:"size:255;not null"`
 	Status            ExperimentStatus   `json:"status" gorm:"size:32;not null;default:draft"`
 	TrafficPercentage int                `json:"trafficPercentage" gorm:"not null;default:100;check:traffic_percentage >= 0 AND traffic_percentage <= 100"`
