@@ -241,7 +241,8 @@ type FlagRule struct {
 	UpdatedBy     uuid.UUID      `json:"updatedBy" gorm:"type:uuid;not null"`
 
 	// Flag is populated when preloading (e.g. in evaluation cache). Not stored as a column.
-	Flag *Flag `json:"flag,omitempty" gorm:"foreignKey:FlagID"`
+	Flag       *Flag      `json:"flag,omitempty" gorm:"foreignKey:FlagID"`
+	Experiment *Experiment `json:"experiment,omitempty" gorm:"foreignKey:FlagID"`
 }
 
 // TableName returns the table name for FlagRule.

@@ -29,6 +29,11 @@ func Evaluate(rule domain.FlagRule, userID string, attributes map[string]any) Ev
 		return EvaluationResult{Enabled: false, Reason: ReasonConditions}
 	}
 
+	// Experiment check comes AFTER conditions but BEFORE rollout
+	if rule.Experiment != nil && rule.Experiment.Status == domain.ExperimentStatusRunning {
+		return evaluateExperiment(rule.Experiment, userID)
+	}
+
 	if rule.RolloutPct >= 100 {
 		return EvaluationResult{Enabled: true, Reason: ReasonEnabled}
 	}
@@ -42,7 +47,7 @@ func Evaluate(rule domain.FlagRule, userID string, attributes map[string]any) Ev
 
 func evaluateConditions(group domain.ConditionGroup, attributes map[string]any) bool {
 	if group.Empty() {
-		return true // brak conditions = zawsze przechodzi
+		return true
 	}
 
 	results := make([]bool, len(group.Conditions))
@@ -98,6 +103,42 @@ func evaluateCondition(c domain.Condition, attributes map[string]any) bool {
 	return false
 }
 
+func evaluateExperiment(exp *domain.Experiment, userID string) EvaluationResult {
+	if bucket(userID) >= exp.TrafficPercentage {
+		return EvaluationResult{Enabled: false, Reason: ReasonDisabled}
+	}
+
+	variant := assignVariant(exp.Variants, userID, exp.ID.String())
+
+	return EvaluationResult{
+		Enabled:      true,
+		Reason:       ReasonExperiment,
+		Variant:      variant,
+		ExperimentID: exp.ID.String(),
+	}
+}
+
+func assignVariant(variants domain.ExperimentVariants, userID string, experimentID string) string {
+	// Guard against empty variants slice
+	if len(variants) == 0 {
+		return ""
+	}
+
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(userID + ":" + experimentID))
+	variantBucket := int(h.Sum32() % 100)
+
+	cumulative := 0
+	for _, v := range variants {
+		cumulative += v.Weight
+		if variantBucket < cumulative {
+			return v.Key
+		}
+	}
+
+	// fallback — last variant
+	return variants[len(variants)-1].Key
+}
 func bucket(userID string) int {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(userID))
