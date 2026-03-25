@@ -369,3 +369,102 @@ type ExperimentEvent struct {
 
 // TableName returns the table name for ExperimentEvent.
 func (ExperimentEvent) TableName() string { return "experiment_events" }
+
+type BillingTier string
+
+const (
+	BillingTierFree BillingTier = "free"
+	BillingTierPro  BillingTier = "pro"
+)
+
+type BillingInterval string
+
+const (
+	BillingIntervalFree    BillingInterval = "month"
+	BillingIntervalPro     BillingInterval = "year"
+	BillingIntervalOneTime BillingInterval = "one_time"
+)
+
+type BillingLimits struct {
+	MaxProjects        int `json:"maxProjects"`
+	MaxEnvironments    int `json:"maxEnvironments"`
+	MaxFlags           int `json:"maxFlags"`
+	MaxAPIKeys         int `json:"maxApiKeys"`
+	MaxTeamMembers     int `json:"maxTeamMembers"`
+	MonthlyEvaluations int `json:"monthyEvaluations"`
+}
+
+func (b BillingLimits) Value() (driver.Value, error) {
+	bs, err := json.Marshal(b)
+	if err != nil {
+		return nil, fmt.Errorf("BillingLimits marshal: %w", err)
+	}
+	return bs, nil
+}
+
+func (b *BillingLimits) Scan(value any) error {
+	if value == nil {
+		*b = BillingLimits{}
+		return nil
+	}
+	var src []byte
+	switch v := value.(type) {
+	case []byte:
+		src = v
+	case string:
+		src = []byte(v)
+	default:
+		return fmt.Errorf("BillingLimits scan: unsupported type %T", value)
+	}
+	if err := json.Unmarshal(src, b); err != nil {
+		return fmt.Errorf("BillingLimits unmarshal: %w", err)
+	}
+	return nil
+}
+
+type Packet struct {
+	Base
+	Name            string          `json:"name" gorm:"size:255;not null"`
+	Description     string          `json:"description" gorm:"type:text;not null"`
+	IsPopular       bool            `json:"isPopular" gorm:"not null;default:false"`
+	Tier            BillingTier     `json:"tier" gorm:"size:32;not null"`
+	Amount          int             `json:"amount" gorm:"not null;default:0"`
+	Currency        string          `json:"currency" gorm:"size:8;not null;default:usd"`
+	Features        JSONMap         `json:"features" gorm:"type:jsonb;default:'{}'"`
+	StripeProductID string          `json:"stripeProductId" gorm:"size:255"`
+	StripePriceID   string          `json:"stripePriceId" gorm:"size:255"`
+	Interval        BillingInterval `json:"interval" gorm:"size:32;not null"`
+	TrialDays       int             `json:"trialDays" gorm:"not null;default:0"`
+	Limits          BillingLimits   `json:"limits" gorm:"type:jsonb;not null;default:'{}'"`
+	StripeMetadata  JSONMap         `json:"stripeMetadata" gorm:"type:jsonb;default:'{}'"`
+}
+
+func (Packet) TableName() string { return "packets" }
+
+type Subscription struct {
+	Base
+	UserID                   uuid.UUID       `json:"userId" gorm:"type:uuid;not null;index"`
+	User                     *User           `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	PacketID                 uuid.UUID       `json:"packetId" gorm:"type:uuid;not null;index"`
+	Packet                   *Packet         `json:"packet,omitempty" gorm:"foreignKey:PacketID"`
+	Tier                     BillingTier     `json:"tier" gorm:"size:32;not null"`
+	Amount                   int             `json:"amount" gorm:"not null;default:0"`
+	Currency                 string          `json:"currency" gorm:"size:8;not null;default:usd"`
+	Interval                 BillingInterval `json:"interval" gorm:"size:32;not null"`
+	Status                   string          `json:"status" gorm:"size:32;not null;default:active"`
+	IsTrial                  bool            `json:"isTrial" gorm:"not null;default:false"`
+	TrialStartsAt            *time.Time      `json:"trialStartsAt" gorm:"type:timestamptz"`
+	TrialEndsAt              *time.Time      `json:"trialEndsAt" gorm:"type:timestamptz"`
+	CurrentPeriodStartedAt   time.Time       `json:"currentPeriodStartedAt" gorm:"type:timestamptz;not null"`
+	CurrentPeriodEndsAt      time.Time       `json:"currentPeriodEndsAt" gorm:"type:timestamptz;not null"`
+	CancelAtCurrentPeriodEnd *bool           `json:"cancelAtCurrentPeriodEnd" gorm:"default:false"`
+	CanceledAt               *time.Time      `json:"canceledAt" gorm:"type:timestamptz"`
+	CancellationReason       *string         `json:"cancellationReason" gorm:"type:text"`
+	EvaluationsUsed          int             `json:"evaluationsUsed" gorm:"not null;default:0"`
+	EvaluationsResetAt       *time.Time      `json:"evaluationsResetAt" gorm:"type:timestamptz"`
+	StripeID                 string          `json:"stripeId" gorm:"size:255;uniqueIndex"`
+	StripeCustomerID         string          `json:"stripeCustomerId" gorm:"size:255;index"`
+	StripeMetadata           JSONMap         `json:"stripeMetadata" gorm:"type:jsonb;default:'{}'"`
+}
+
+func (Subscription) TableName() string { return "subscriptions" }

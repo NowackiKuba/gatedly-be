@@ -18,7 +18,9 @@ import (
 	"toggly.com/m/cmd/api/internal/flag"
 	"toggly.com/m/cmd/api/internal/flagrule"
 	"toggly.com/m/cmd/api/internal/middleware"
+	"toggly.com/m/cmd/api/internal/packet"
 	"toggly.com/m/cmd/api/internal/project"
+	"toggly.com/m/cmd/api/internal/subscription"
 	"toggly.com/m/cmd/api/internal/user"
 	"toggly.com/m/pkg/logger"
 )
@@ -79,6 +81,14 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	experimentEventSvc := experimentevent.NewService(experimentEventRepo)
 	experimentEventHandler := experimentevent.NewHandler(experimentEventSvc)
 
+	packetRepo := packet.NewRepository(db)
+	packetSvc := packet.NewService(packetRepo)
+	packetHandler := packet.NewHandler(packetSvc)
+
+	subscriptionRepo := subscription.NewRepository(db)
+	subscriptionSvc := subscription.NewService(subscriptionRepo)
+	subscriptionHandler := subscription.NewHandler(subscriptionSvc)
+
 	evalHandler := evaluation.NewHandler(evalSvc, analyticsSvc)
 
 	// Health + auth + user routes (explicit paths to avoid group path issues)
@@ -132,6 +142,14 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	experimentEventAuthGroup.Use(middleware.Auth(cfg.JWT.Secret))
 	experimentEventAuthGroup.GET("/:id", experimentEventHandler.GetByExperimentID)
 	experimentEventAuthGroup.GET("/:id/summary", experimentEventHandler.GetExperimentEventsSummary)
+
+	packetGroup := v1.Group("/packets")
+	packetGroup.Use(middleware.Auth(cfg.JWT.Secret))
+	packet.RegisterRoutes(packetGroup, packetHandler)
+
+	subscriptionGroup := v1.Group("/subscriptions")
+	subscriptionGroup.Use(middleware.Auth(cfg.JWT.Secret))
+	subscription.RegisterRoutes(subscriptionGroup, subscriptionHandler)
 	//
 
 	// Log all registered API routes (Gin's Routes() can be incomplete with groups)
