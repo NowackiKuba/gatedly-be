@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -146,6 +147,11 @@ func (h *Handler) GetMe(c *gin.Context) {
 	}
 	s, err := h.svc.GetByUserID(c.Request.Context(), userID)
 	if err != nil {
+		var appErr *response.AppError
+		if errors.As(err, &appErr) && appErr.Status == http.StatusNotFound {
+			response.JSON(c.Writer, http.StatusOK, nil)
+			return
+		}
 		response.Error(c.Writer, err)
 		c.Abort()
 		return

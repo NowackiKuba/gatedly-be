@@ -1,9 +1,14 @@
 package main
 
 import (
+	"fmt"
+	"log/slog"
+	"os"
+
 	"github.com/joho/godotenv"
 	"toggly.com/m/cmd/api/internal/config"
 	"toggly.com/m/cmd/api/internal/database"
+	"toggly.com/m/cmd/api/internal/seed"
 	"toggly.com/m/cmd/api/internal/server"
 )
 
@@ -16,7 +21,11 @@ func main() {
 	}
 
 	cfg := config.MustLoad()
+	fmt.Printf("CFG %w", cfg)
 	db := database.Connect(cfg.DB.ConnectionString())
+
+	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	seed.Packets(db, log)
 
 	server.Init(db, cfg)
 }

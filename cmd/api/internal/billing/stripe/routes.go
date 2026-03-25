@@ -6,6 +6,10 @@ import "github.com/gin-gonic/gin"
 func RegisterRoutes(g *gin.RouterGroup, h *Handler) {
 	g.POST("/checkout", h.Checkout)
 	g.POST("/portal", h.Portal)
+	g.GET("/usage", h.Usage)
+	g.GET("/payment-method", h.GetPaymentMethod)
+	g.GET("/invoices", h.GetInvoices)
+	g.POST("/cancel", h.Cancel)
 }
 
 // RegisterWebhookRoute registers the Stripe webhook on the root router group (no auth).

@@ -62,7 +62,7 @@ func (s *service) GetByID(ctx context.Context, id uuid.UUID) (*domain.Subscripti
 		return nil, fmt.Errorf("subscription get by id: %w", err)
 	}
 	if sub == nil {
-		return nil, response.NotFound("subscription not found")
+		return nil, nil
 	}
 	return sub, nil
 }
@@ -84,8 +84,9 @@ func (s *service) GetByStripeID(ctx context.Context, stripeID string) (*domain.S
 		return nil, fmt.Errorf("subscription get by stripe id: %w", err)
 	}
 	if sub == nil {
-		return nil, response.NotFound("subscription not found")
+		return nil, nil
 	}
+
 	return sub, nil
 }
 

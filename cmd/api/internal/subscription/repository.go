@@ -60,6 +60,7 @@ func (r *repository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Subscri
 	var s domain.Subscription
 	err := r.db.WithContext(ctx).Preload("Packet").Where("id = ?", id).First(&s).Error
 	if err != nil {
+		fmt.Printf("ERROR %w", err)
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}

@@ -93,7 +93,7 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	webhookHandler := billing.NewWebhookHandler(cfg.Stripe.WebhookSecret, subscriptionSvc, packetRepo, slog)
 
 	billingSvc := billing.New(cfg.Stripe.SecretKey)
-	billingHandler := billing.NewHandler(billingSvc, packetSvc, subscriptionSvc, cfg.Stripe.SuccessURL, cfg.Stripe.CancelURL)
+	billingHandler := billing.NewHandler(billingSvc, packetSvc, subscriptionSvc, db, cfg.Stripe.SuccessURL, cfg.Stripe.CancelURL)
 
 	evalHandler := evaluation.NewHandler(evalSvc, analyticsSvc)
 

@@ -116,6 +116,7 @@ func (h *Handler) GetAll(c *gin.Context) {
 		c.Abort()
 		return
 	}
+
 	response.JSON(c.Writer, http.StatusOK, list)
 }
 
