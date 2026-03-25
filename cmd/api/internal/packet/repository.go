@@ -14,6 +14,7 @@ type Repository interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetById(ctx context.Context, id uuid.UUID) (*domain.Packet, error)
 	GetAll(ctx context.Context) (*[]domain.Packet, error)
+	GetByStripeProductID(ctx context.Context, stripeProductID string) (*domain.Packet, error)
 }
 
 type repository struct {
@@ -68,4 +69,16 @@ func (r *repository) GetAll(ctx context.Context) (*[]domain.Packet, error) {
 	}
 
 	return &list, nil
+}
+
+func (r *repository) GetByStripeProductID(ctx context.Context, stripeProductID string) (*domain.Packet, error) {
+	var p domain.Packet
+	err := r.db.WithContext(ctx).Where("stripe_product_id = ?", stripeProductID).First(&p).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &p, nil
 }

@@ -10,9 +10,18 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	HTTP HTTPConfig `envPrefix:"HTTP_"`
-	DB   DBConfig   `envPrefix:"DB_"`
-	JWT  JWTConfig  `envPrefix:"JWT_"`
+	HTTP   HTTPConfig   `envPrefix:"HTTP_"`
+	DB     DBConfig     `envPrefix:"DB_"`
+	JWT    JWTConfig    `envPrefix:"JWT_"`
+	Stripe StripeConfig `envPrefix:"STRIPE_"`
+}
+
+// StripeConfig holds Stripe API keys and webhook secret.
+type StripeConfig struct {
+	SecretKey     string `env:"SECRET_KEY"`
+	WebhookSecret string `env:"WEBHOOK_SECRET"`
+	SuccessURL    string `env:"SUCCESS_URL" envDefault:"http://localhost:3000/billing/success"`
+	CancelURL     string `env:"CANCEL_URL" envDefault:"http://localhost:3000/billing/cancel"`
 }
 
 // HTTPConfig holds HTTP server settings.

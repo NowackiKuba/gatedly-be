@@ -10,6 +10,7 @@ import (
 	"toggly.com/m/cmd/api/internal/analytics"
 	"toggly.com/m/cmd/api/internal/apikey"
 	"toggly.com/m/cmd/api/internal/auth"
+	billing "toggly.com/m/cmd/api/internal/billing/stripe"
 	"toggly.com/m/cmd/api/internal/config"
 	"toggly.com/m/cmd/api/internal/environment"
 	"toggly.com/m/cmd/api/internal/evaluation"
@@ -89,6 +90,11 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	subscriptionSvc := subscription.NewService(subscriptionRepo)
 	subscriptionHandler := subscription.NewHandler(subscriptionSvc)
 
+	webhookHandler := billing.NewWebhookHandler(cfg.Stripe.WebhookSecret, subscriptionSvc, packetRepo, slog)
+
+	billingSvc := billing.New(cfg.Stripe.SecretKey)
+	billingHandler := billing.NewHandler(billingSvc, packetSvc, subscriptionSvc, cfg.Stripe.SuccessURL, cfg.Stripe.CancelURL)
+
 	evalHandler := evaluation.NewHandler(evalSvc, analyticsSvc)
 
 	// Health + auth + user routes (explicit paths to avoid group path issues)
@@ -150,6 +156,13 @@ func Init(db *gorm.DB, cfg *config.Config) {
 	subscriptionGroup := v1.Group("/subscriptions")
 	subscriptionGroup.Use(middleware.Auth(cfg.JWT.Secret))
 	subscription.RegisterRoutes(subscriptionGroup, subscriptionHandler)
+
+	// Stripe webhook — no auth middleware, signature verified inside the handler.
+	billing.RegisterWebhookRoute(v1, webhookHandler)
+
+	billingGroup := v1.Group("/billing")
+	billingGroup.Use(middleware.Auth(cfg.JWT.Secret))
+	billing.RegisterRoutes(billingGroup, billingHandler)
 	//
 
 	// Log all registered API routes (Gin's Routes() can be incomplete with groups)
