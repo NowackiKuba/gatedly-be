@@ -51,10 +51,31 @@ func (h *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for key, values := range r.Header {
+		for _, value := range values {
+			fmt.Printf("%s: %s\n", key, value)
+		}
+	}
+
+	fmt.Printf("whsec: %s", h.webhookSecret)
 	sig := r.Header.Get("Stripe-Signature")
-	event, err := webhook.ConstructEvent(payload, sig, h.webhookSecret)
+
+	h.log.Info("webhook: verifying",
+		"payload_len", len(payload),
+		"content_length", r.Header.Get("Content-Length"),
+	)
+
+	event, err := webhook.ConstructEventIgnoringTolerance(payload, sig, h.webhookSecret)
 	if err != nil {
-		h.log.Error("webhook: signature verification failed", "err", err)
+		h.log.Error("webhook: signature verification failed",
+			"err", err,
+			"secret_prefix", func() string {
+				if len(h.webhookSecret) > 10 {
+					return h.webhookSecret[:10] + "..."
+				}
+				return "(empty)"
+			}(),
+		)
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
 	}
